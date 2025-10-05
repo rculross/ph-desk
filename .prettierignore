@@ -1,0 +1,15 @@
+node_modules
+dist
+build
+.git
+.vscode
+.idea
+*.min.js
+*.min.css
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+coverage
+.nyc_output
+playwright-report
+test-results
