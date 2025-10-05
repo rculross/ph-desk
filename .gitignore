@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+out/
+*.log
+.DS_Store
+coverage/
+test-results/
+playwright-report/
+
+# Electron specific
+electron/dist/
+electron/out/
+*.exe
+*.dmg
+*.AppImage
+*.snap
