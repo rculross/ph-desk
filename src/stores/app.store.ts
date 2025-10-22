@@ -1,8 +1,9 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage, subscribeWithSelector } from 'zustand/middleware'
 
-import type { Notification, NotificationAction, UserSettings, ThemeConfig } from '../types'
+import type { Notification, UserSettings } from '../types'
 import { logger } from '../utils/logger'
+import { parseSecureJson } from '../utils/secure-json'
 import { storageManager } from '../utils/storage-manager'
 
 /**
@@ -33,7 +34,7 @@ export interface AppState {
   modals: {
     [key: string]: {
       isOpen: boolean
-      data?: any
+      data?: unknown
     }
   }
 
@@ -81,10 +82,10 @@ export interface AppActions {
   setActive: (active: boolean) => void
 
   // Modal management
-  openModal: (modalKey: string, data?: any) => void
+  openModal: (modalKey: string, data?: unknown) => void
   closeModal: (modalKey: string) => void
   isModalOpen: (modalKey: string) => boolean
-  getModalData: (modalKey: string) => any
+  getModalData: (modalKey: string) => unknown
 
   // Command palette
   openCommandPalette: () => void
@@ -256,7 +257,7 @@ export const useAppStore = create<AppStore>()(
                 icon: '/assets/icons/icon48.png'
               })
             } else if (Notification.permission === 'default') {
-              Notification.requestPermission()
+              void Notification.requestPermission()
             }
           }
         },
@@ -357,9 +358,9 @@ export const useAppStore = create<AppStore>()(
         },
 
         // Modal management
-        openModal: (modalKey: string, data?: any) => {
+        openModal: (modalKey: string, data?: unknown) => {
           logger.extension.info('Modal opened', { modalKey, hasData: !!data })
-          
+
           set(state => ({
             modals: {
               ...state.modals,
@@ -392,10 +393,10 @@ export const useAppStore = create<AppStore>()(
         },
 
         isModalOpen: (modalKey: string): boolean => {
-          return get().modals[modalKey]?.isOpen || false
+          return get().modals[modalKey]?.isOpen ?? false
         },
 
-        getModalData: (modalKey: string): any => {
+        getModalData: (modalKey: string): unknown => {
           return get().modals[modalKey]?.data
         },
 
@@ -415,10 +416,10 @@ export const useAppStore = create<AppStore>()(
         // Loading states
         setGlobalLoading: (loading: boolean, message?: string) => {
           logger.extension.debug('Global loading state changed', { loading, message })
-          
-          set({ 
+
+          set({
             globalLoading: loading,
-            loadingMessage: loading ? message || null : null
+            loadingMessage: loading ? message ?? null : null
           })
         },
 
@@ -458,7 +459,7 @@ export const useAppStore = create<AppStore>()(
         },
 
         hasFeatureFlag: (flag: string): boolean => {
-          return get().featureFlags[flag] || false
+          return get().featureFlags[flag] ?? false
         },
 
         // Utility actions
@@ -490,29 +491,34 @@ export const useAppStore = create<AppStore>()(
 
         importSettings: (settingsJson: string) => {
           try {
-            const { parseSecureJson } = require('../utils/secure-json')
-            const parseResult = parseSecureJson(settingsJson, {
+            interface ImportedSettings {
+              settings?: Partial<UserSettings>
+              theme?: 'light' | 'dark' | 'system'
+              featureFlags?: Record<string, boolean>
+            }
+
+            const parseResult = parseSecureJson<ImportedSettings>(settingsJson, {
               maxSize: 100 * 1024, // 100KB limit for settings
               maxDepth: 10,
               maxKeys: 500,
               allowedTypes: ['object', 'array', 'string', 'number', 'boolean', 'null']
             })
-            
+
             if (!parseResult.success) {
-              throw new Error(`Settings parsing failed: ${parseResult.error}`)
+              throw new Error(`Settings parsing failed: ${parseResult.error ?? 'Unknown error'}`)
             }
-            
+
             const imported = parseResult.data
 
-            if (imported.settings) {
+            if (imported?.settings) {
               get().updateSettings(imported.settings)
             }
 
-            if (imported.theme) {
+            if (imported?.theme) {
               get().setTheme(imported.theme)
             }
 
-            if (imported.featureFlags) {
+            if (imported?.featureFlags) {
               set(state => ({
                 featureFlags: {
                   ...state.featureFlags,
@@ -532,7 +538,7 @@ export const useAppStore = create<AppStore>()(
           getItem: async (name: string) => {
             try {
               const result = await storageManager.safeGet([name])
-              return result[name] || null
+              return (result[name] as string | null) ?? null
             } catch (error) {
               logger.extension.warn('App store get failed, falling back to direct storage', {
                 key: name,
@@ -540,7 +546,7 @@ export const useAppStore = create<AppStore>()(
               })
               // Fallback to direct storage if safe storage fails
               const fallbackResult = await chrome.storage.local.get([name])
-              return fallbackResult[name] || null
+              return (fallbackResult[name] as string | null) ?? null
             }
           },
           setItem: async (name: string, value: string) => {
@@ -652,7 +658,7 @@ export const useModal = (modalKey: string) =>
   useAppStore(state => ({
     isOpen: state.isModalOpen(modalKey),
     data: state.getModalData(modalKey),
-    open: (data?: any) => state.openModal(modalKey, data),
+    open: (data?: unknown) => state.openModal(modalKey, data),
     close: () => state.closeModal(modalKey)
   }))
 

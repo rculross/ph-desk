@@ -4,7 +4,7 @@ import { persist, createJSONStorage, subscribeWithSelector } from 'zustand/middl
 import { tenantService } from '../api/services/tenant.service'
 import type { TenantInfo, TenantUsage, TenantFilters, TenantStatus } from '../api/services/tenant.service'
 import { createMessage } from '../schemas/message-schemas'
-import type { TenantContext, TenantSettings, TenantLimits } from '../types/api'
+import type { TenantSettings, TenantLimits } from '../types/api'
 import { logger } from '../utils/logger'
 
 /**
@@ -261,16 +261,20 @@ export const useTenantStore = create<TenantStore>()(
             try {
               const currentTenant = get().currentTenant
               const previousTenantSlug = currentTenant?.slug
-              
+
               // Create clean payload object to avoid prototype pollution
-              const payload: any = {
+              const payload: {
+                tenant: string
+                url: string
+                previousTenant?: string
+              } = {
                 tenant: String(tenant.slug),
                 url: String(window.location.href)
               }
               if (previousTenantSlug) {
                 payload.previousTenant = String(previousTenantSlug)
               }
-              
+
               const message = createMessage('TENANT_CHANGED', payload)
               await chrome.runtime.sendMessage(message)
             } catch {
@@ -397,7 +401,7 @@ export const useTenantStore = create<TenantStore>()(
 
         getTenantStatus: (tenantSlug: string): TenantStatus | null => {
           const state = get()
-          return state.tenantStatuses.find(status => status.tenantSlug === tenantSlug) || null
+          return state.tenantStatuses.find(status => status.tenantSlug === tenantSlug) ?? null
         },
 
         getActiveTenants: (): TenantStatus[] => {
@@ -415,7 +419,7 @@ export const useTenantStore = create<TenantStore>()(
           try {
             // Extract state BEFORE any async operations
             const currentTenant = get().currentTenant
-            const id = tenantId || currentTenant?.id
+            const id = tenantId ?? currentTenant?.id
             if (!id) {
               logger.api.error('Cannot fetch tenant settings - no tenant ID provided')
               throw new Error('No tenant ID provided')
@@ -547,20 +551,20 @@ export const useTenantStore = create<TenantStore>()(
         // Feature checks
         hasFeature: (feature: string): boolean => {
           const state = get()
-          const hasFeature = state.currentTenant?.features.includes(feature) || false
-          
+          const hasFeature = state.currentTenant?.features.includes(feature) ?? false
+
           logger.api.debug('Feature check', {
             feature,
             hasFeature,
             tenantSlug: state.currentTenant?.slug
           })
-          
+
           return hasFeature
         },
 
         getTenantFeatures: (): string[] => {
           const state = get()
-          return state.currentTenant?.features || []
+          return state.currentTenant?.features ?? []
         },
 
         // Error handling and UI state
@@ -632,7 +636,7 @@ export const useTenantStore = create<TenantStore>()(
         storage: createJSONStorage(() => ({
           getItem: async (name: string) => {
             const result = await chrome.storage.local.get([name])
-            return result[name] || null
+            return (result[name] as string | null) ?? null
           },
           setItem: async (name: string, value: string) => {
             await chrome.storage.local.set({ [name]: value })
@@ -677,7 +681,7 @@ export const useActiveTenant = () => useTenantStore(state => state.currentTenant
 export const useAvailableTenants = () => useTenantStore(state => state.availableTenants)
 export const useTenantLoading = () =>
   useTenantStore(state => state.isLoading || state.tenantsLoading)
-export const useTenantError = () => useTenantStore(state => state.error || state.tenantsError)
+export const useTenantError = () => useTenantStore(state => state.error ?? state.tenantsError)
 export const useTenantFeatures = () => useTenantStore(state => state.getTenantFeatures())
 export const useTenantSettings = () => useTenantStore(state => state.tenantSettings)
 export const useTenantUsage = () => useTenantStore(state => state.tenantUsage)
@@ -730,7 +734,7 @@ const initializeTenantStore = async () => {
     const currentTenant = await tenantService.getCurrentTenant()
 
     if (currentTenant) {
-      useTenantStore.getState().setCurrentTenant(currentTenant)
+      await useTenantStore.getState().setCurrentTenant(currentTenant)
     } else {
       // Tab-first initialization approach
       logger.api.info('Tab-first initialization: Starting tenant discovery')
@@ -744,8 +748,8 @@ const initializeTenantStore = async () => {
 
       try {
         const storage = await chrome.storage.local.get(['last-selected-tenant'])
-        targetTenantSlug = storage['last-selected-tenant']
-        logger.api.debug(`Tab-first initialization: Last selected tenant from storage: ${targetTenantSlug || 'none'}`)
+        targetTenantSlug = storage['last-selected-tenant'] as string | null
+        logger.api.debug(`Tab-first initialization: Last selected tenant from storage: ${targetTenantSlug ?? 'none'}`)
       } catch (storageError) {
         logger.api.warn('Failed to load last selected tenant from storage:', storageError instanceof Error ? storageError.message : 'Unknown error')
       }
@@ -814,12 +818,12 @@ const initializeTenantStore = async () => {
 }
 
 // Auto-initialize when the module loads
-initializeTenantStore()
+void initializeTenantStore()
 
 // Subscribe to auth changes to handle tenant context
 if (typeof window !== 'undefined') {
   // Import auth store to subscribe to changes
-  import('./auth.store').then(({ useAuthStore }) => {
+  void import('./auth.store').then(({ useAuthStore }) => {
     let previousIsAuthenticated = useAuthStore.getState().isAuthenticated
 
     useAuthStore.subscribe(state => {
@@ -828,7 +832,7 @@ if (typeof window !== 'undefined') {
       if (isAuthenticated && !previousIsAuthenticated) {
         // User just logged in, reset initialization flag and initialize tenant data
         hasInitialized = false
-        initializeTenantStore()
+        void initializeTenantStore()
       } else if (!isAuthenticated && previousIsAuthenticated) {
         // User logged out, clear tenant data synchronously
         // Clear state directly without async operation to avoid proxy issues

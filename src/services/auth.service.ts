@@ -245,12 +245,12 @@ export const authService = new AuthService()
 
 // Make authService globally available for HTTP client
 if (typeof window !== 'undefined') {
-  (window as any).authService = authService
+  ;(window as unknown as { authService: typeof authService }).authService = authService
 }
 
 // Auto-initialize on module load (for Electron environment)
 if (typeof window !== 'undefined' && window.electron?.auth) {
-  authService.initialize().catch(error => {
+  void authService.initialize().catch(error => {
     console.error('[Auth] Failed to initialize:', error)
   })
 }

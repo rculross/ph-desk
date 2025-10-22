@@ -67,16 +67,16 @@ const createLogger = (context: string, targetConsole: Console = safeConsole) => 
 
   // Override methods to add formatted prefix
   const originalFactory = contextLogger.methodFactory
-  contextLogger.methodFactory = (methodName: string, logLevel: any, loggerName: string) => {
+  contextLogger.methodFactory = (methodName: string, logLevel: LogLevelNumbers, loggerName: string) => {
     const rawMethod = originalFactory(methodName, logLevel, loggerName)
 
-    return (...args: any[]) => {
+    return (...args: unknown[]) => {
       const levelCode = levelMap[methodName] || methodName.toUpperCase().slice(0, 3)
       const contextCode = contextMap[context] || context.slice(0, 3)
 
       // Track message counts
       if (messageCounter[methodName]) {
-        messageCounter[methodName][context] = (messageCounter[methodName][context] || 0) + 1
+        messageCounter[methodName][context] = (messageCounter[methodName][context] ?? 0) + 1
       }
 
       rawMethod.apply(targetConsole, [`[${levelCode} : ${contextCode}]`, ...args])
@@ -95,7 +95,15 @@ export const createContextLogger = (context: string, targetConsole?: Console) =>
   createLogger(context, targetConsole)
 
 // Export context-specific loggers matching the original API
-export const logger = {
+export const logger: {
+  bg: log.Logger
+  content: log.Logger
+  popup: log.Logger
+  api: log.Logger
+  extension: log.Logger
+  system: log.Logger
+  root: log.RootLogger
+} = {
   bg: createLogger('BACKGROUND'),
   content: createLogger('CONTENT'),
   popup: createLogger('POPUP'),

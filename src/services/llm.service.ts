@@ -273,7 +273,7 @@ class LLMService {
       log.debug('Fetching available models from provider', { provider })
       const httpClient = this.getHttpClient(provider, apiKey, config)
 
-      let response: any
+      let response: unknown
 
       switch (provider) {
         case 'claude':
@@ -326,43 +326,49 @@ class LLMService {
   /**
    * Parse models response from provider API
    */
-  private parseModelsResponse(provider: LLMProvider, response: any, config: LLMProviderConfig): LLMModel[] {
+  private parseModelsResponse(provider: LLMProvider, response: unknown, config: LLMProviderConfig): LLMModel[] {
     try {
+      const responseData = response as { data?: unknown[] }
+
       switch (provider) {
         case 'claude':
           // Parse Anthropic's /v1/models response
-          const claudeModels = response.data || []
+          const claudeModels = Array.isArray(responseData.data) ? responseData.data : []
           return claudeModels
-            .filter((model: any) => model.type === 'model')
-            .map((model: any) => {
+            .filter((model: unknown): model is { type: string; id: string; display_name?: string } => {
+              return typeof model === 'object' && model !== null && 'type' in model && (model as { type: unknown }).type === 'model'
+            })
+            .map(model => {
               // Try to find matching model in our static config for pricing/capabilities
               const staticModel = config.availableModels.find(m => m.modelId === model.id)
 
               return {
                 modelId: model.id,
-                displayName: model.display_name || staticModel?.displayName || model.id,
-                description: staticModel?.description || 'Claude model',
-                maxTokens: staticModel?.maxTokens || 200000,
-                costPer1kTokens: staticModel?.costPer1kTokens || { input: 0.003, output: 0.015 },
-                capabilities: staticModel?.capabilities || { streaming: true, vision: true, functionCalling: true }
+                displayName: model.display_name ?? staticModel?.displayName ?? model.id,
+                description: staticModel?.description ?? 'Claude model',
+                maxTokens: staticModel?.maxTokens ?? 200000,
+                costPer1kTokens: staticModel?.costPer1kTokens ?? { input: 0.003, output: 0.015 },
+                capabilities: staticModel?.capabilities ?? { streaming: true, vision: true, functionCalling: true }
               }
             })
 
         case 'openai':
           // Parse OpenAI's /v1/models response
-          const openaiModels = response.data || []
+          const openaiModels = Array.isArray(responseData.data) ? responseData.data : []
           return openaiModels
-            .filter((model: any) => model.id.includes('gpt'))
-            .map((model: any) => {
+            .filter((model: unknown): model is { id: string } => {
+              return typeof model === 'object' && model !== null && 'id' in model && typeof (model as { id: unknown }).id === 'string' && (model as { id: string }).id.includes('gpt')
+            })
+            .map(model => {
               const staticModel = config.availableModels.find(m => m.modelId === model.id)
 
               return {
                 modelId: model.id,
-                displayName: staticModel?.displayName || model.id,
-                description: staticModel?.description || 'OpenAI model',
-                maxTokens: staticModel?.maxTokens || 4000,
-                costPer1kTokens: staticModel?.costPer1kTokens || { input: 0.001, output: 0.002 },
-                capabilities: staticModel?.capabilities || { streaming: true, vision: false, functionCalling: true }
+                displayName: staticModel?.displayName ?? model.id,
+                description: staticModel?.description ?? 'OpenAI model',
+                maxTokens: staticModel?.maxTokens ?? 4000,
+                costPer1kTokens: staticModel?.costPer1kTokens ?? { input: 0.001, output: 0.002 },
+                capabilities: staticModel?.capabilities ?? { streaming: true, vision: false, functionCalling: true }
               }
             })
 
@@ -566,7 +572,7 @@ class LLMService {
     messages: ChatMessage[],
     model: string,
     options: LLMRequestOptions
-  ): any {
+  ): Record<string, unknown> {
     const config = this.getProviderConfig(provider)
 
     switch (provider) {
@@ -590,7 +596,7 @@ class LLMService {
     model: string,
     options: LLMRequestOptions,
     config: LLMProviderConfig
-  ): any {
+  ): Record<string, unknown> {
     // Convert messages to Claude format
     const claudeMessages = messages
       .filter(m => m.role !== 'system')
@@ -617,7 +623,7 @@ class LLMService {
     model: string,
     options: LLMRequestOptions,
     config: LLMProviderConfig
-  ): any {
+  ): Record<string, unknown> {
     const openAIMessages = messages.map(m => ({
       role: m.role,
       content: m.content
@@ -637,7 +643,7 @@ class LLMService {
     model: string,
     options: LLMRequestOptions,
     config: LLMProviderConfig
-  ): any {
+  ): Record<string, unknown> {
     // Gemini uses a different format - convert messages to parts
     const contents = messages
       .filter(m => m.role !== 'system')
@@ -664,9 +670,9 @@ class LLMService {
   private async makeApiRequest(
     httpClient: HttpClient,
     provider: LLMProvider,
-    payload: any,
+    payload: Record<string, unknown>,
     apiKey: string
-  ): Promise<any> {
+  ): Promise<unknown> {
     const config = this.getProviderConfig(provider)
 
     // Clean the API key to remove any whitespace
@@ -827,7 +833,7 @@ class LLMService {
    */
   private parseResponse(
     provider: LLMProvider,
-    response: any,
+    response: unknown,
     model: string,
     duration: number
   ): LLMResponse {
@@ -835,31 +841,39 @@ class LLMService {
       let content = ''
       let usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
 
+      const responseObj = response as Record<string, unknown>
+
       switch (provider) {
         case 'claude':
-          content = response.content?.[0]?.text || ''
+          const claudeContent = responseObj.content as Array<{ text?: string }> | undefined
+          content = claudeContent?.[0]?.text ?? ''
+          const claudeUsage = responseObj.usage as { input_tokens?: number; output_tokens?: number } | undefined
           usage = {
-            inputTokens: response.usage?.input_tokens || 0,
-            outputTokens: response.usage?.output_tokens || 0,
-            totalTokens: (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0)
+            inputTokens: claudeUsage?.input_tokens ?? 0,
+            outputTokens: claudeUsage?.output_tokens ?? 0,
+            totalTokens: (claudeUsage?.input_tokens ?? 0) + (claudeUsage?.output_tokens ?? 0)
           }
           break
 
         case 'openai':
-          content = response.choices?.[0]?.message?.content || ''
+          const openaiChoices = responseObj.choices as Array<{ message?: { content?: string } }> | undefined
+          content = openaiChoices?.[0]?.message?.content ?? ''
+          const openaiUsage = responseObj.usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined
           usage = {
-            inputTokens: response.usage?.prompt_tokens || 0,
-            outputTokens: response.usage?.completion_tokens || 0,
-            totalTokens: response.usage?.total_tokens || 0
+            inputTokens: openaiUsage?.prompt_tokens ?? 0,
+            outputTokens: openaiUsage?.completion_tokens ?? 0,
+            totalTokens: openaiUsage?.total_tokens ?? 0
           }
           break
 
         case 'gemini':
-          content = response.candidates?.[0]?.content?.parts?.[0]?.text || ''
+          const geminiCandidates = responseObj.candidates as Array<{ content?: { parts?: Array<{ text?: string }> } }> | undefined
+          content = geminiCandidates?.[0]?.content?.parts?.[0]?.text ?? ''
+          const geminiUsage = responseObj.usageMetadata as { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number } | undefined
           usage = {
-            inputTokens: response.usageMetadata?.promptTokenCount || 0,
-            outputTokens: response.usageMetadata?.candidatesTokenCount || 0,
-            totalTokens: response.usageMetadata?.totalTokenCount || 0
+            inputTokens: geminiUsage?.promptTokenCount ?? 0,
+            outputTokens: geminiUsage?.candidatesTokenCount ?? 0,
+            totalTokens: geminiUsage?.totalTokenCount ?? 0
           }
           break
       }
@@ -1039,10 +1053,11 @@ class LLMService {
   /**
    * Handle HTTP errors
    */
-  private handleHttpError(error: any, provider: LLMProvider): LLMError {
-    const status = error.response?.status
-    const statusText = error.response?.statusText || ''
-    const responseData = error.response?.data
+  private handleHttpError(error: unknown, provider: LLMProvider): LLMError {
+    const errorObj = error as { response?: { status?: number; statusText?: string; data?: unknown }; code?: string; message?: string }
+    const status = errorObj.response?.status
+    const statusText = errorObj.response?.statusText ?? ''
+    const responseData = errorObj.response?.data
 
     switch (status) {
       case 401:
@@ -1085,17 +1100,17 @@ class LLMService {
           { status, statusText, responseData }
         )
       default:
-        if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+        if (errorObj.code === 'ENOTFOUND' || errorObj.code === 'ECONNREFUSED') {
           return new LLMError(
             'Network error - unable to reach provider',
             'NETWORK_ERROR',
             provider,
-            { originalError: error.message }
+            { originalError: errorObj.message }
           )
         }
 
         return new LLMError(
-          error.message || 'Unknown API error',
+          errorObj.message ?? 'Unknown API error',
           'REQUEST_FAILED',
           provider,
           { status, statusText, responseData }
@@ -1106,16 +1121,17 @@ class LLMService {
   /**
    * Handle API errors
    */
-  private handleApiError(error: any, provider: LLMProvider, model?: string): LLMError {
-    if (error.response) {
+  private handleApiError(error: unknown, provider: LLMProvider, model?: string): LLMError {
+    const errorObj = error as { response?: unknown; message?: string }
+    if (errorObj.response) {
       return this.handleHttpError(error, provider)
     }
 
     return new LLMError(
-      error.message || 'Unknown error occurred',
+      errorObj.message ?? 'Unknown error occurred',
       'REQUEST_FAILED',
       provider,
-      { model, originalError: error.message }
+      { model, originalError: errorObj.message }
     )
   }
 

@@ -106,7 +106,7 @@ export class FieldDetectionService {
    */
   async detectFields(
     entityType: EntityType,
-    sampleData?: any[],
+    sampleData?: unknown[],
     tenantSlug?: string
   ): Promise<FieldDetectionResult> {
     log.info('Starting field detection', { 
@@ -424,7 +424,7 @@ export class FieldDetectionService {
    * Discover fields by analyzing sample data
    */
   private discoverFieldsFromData(
-    sampleData: any[],
+    sampleData: unknown[],
     existingStandardFields: DetectedField[],
     existingCustomFields: DetectedField[]
   ): DetectedField[] {
@@ -487,7 +487,7 @@ export class FieldDetectionService {
    * Recursively analyze object fields
    */
   private analyzeObjectFields(
-    obj: any,
+    obj: unknown,
     fieldMap: Map<string, { types: Set<string>, count: number }>,
     existingKeys: Set<string>,
     prefix = ''
@@ -548,7 +548,7 @@ export class FieldDetectionService {
   /**
    * Detect the type of a value with enhanced logic for dates
    */
-  private detectValueType(value: any): string {
+  private detectValueType(value: unknown): string {
     if (value === null || value === undefined) return 'null'
     if (typeof value === 'number') return 'number'
     if (typeof value === 'boolean') return 'boolean'
