@@ -6,8 +6,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PH Tools Desktop is an Electron desktop application providing intelligent tools and automation for Planhat platform users. Built with React, TypeScript, Vite, and Electron, it was migrated from a Chrome extension and includes advanced features like data export, LLM integration, and Salesforce connectivity.
 
-**Version**: 3.1.274
+## Core Design Philosopies that MUST be followed
+- **Prefer simpl solutions** We don't want to be complex.  Always prefer the solutions that is the simplest and changes the least amount of code
+- **Do Not Change Patterns or Architecture** Only the Typescript Subagent can make decisions on architecure and coding patterns
+- **Update only what is asked** Perform the actions that are asked of you. Do not make changes beyond the scope of the request.
+- **Always Ask** when in doubt always ask for clarificaiton.  hours upon hours are wasted on incomplete or misunderstood specs.  Asking saves precious time.
+- **Version Number Updates** Always update the patch portion of the version number after any change
+- **The API is Sacred** The entire extension works via Planhat's bespoke API practices.  DO NOT ASSUME how it works.  Do not change API end points without first asking.  The API service is only edited with permission from the user.  If you do not follow this rule you will screw up the program and be terminated.
+
+**Version**: 4.0.0
 **Stack**: Electron 38 + React 18 + TypeScript 5 + Vite 5 + Zustand + TanStack Query
+
+## Version Management
+
+**MUST UPDATE after ANY change:**
+1. `package.json` - NPM package version and Electron app version
+2. `src/config/version.ts` - Application version display (APP_VERSION constant)
+
+**Versioning Rules:**
+- Increment PATCH number (3rd component) by 1 after every change
+- Version format: MAJOR.MINOR.PATCH (e.g., 4.0.275)
+- PATCH number can increment without limit (no rollover required)
+
+**Development Workflow:**
+```bash
+# 1. Update version in package.json: "version": "4.0.275"
+# 2. Update version in src/config/version.ts: export const APP_VERSION = '4.0.275'
+# 3. Continue development with hot reload
+npm run dev  # Hot reload handles React changes automatically
+```
+
+**Production Builds:**
+```bash
+# For production distribution builds (creates installers in release/)
+npm run build:electron  # Builds React app to dist/ + packages Electron app to release/
+```
+
+**Note**: Unlike Chrome extensions, Electron supports hot reloading for renderer process (React) changes. Only run `npm run build:electron` for production distribution or when testing production builds locally. Main process changes (`electron/*.cjs`) require restarting `npm run dev`.
 
 ## Development Commands
 
@@ -131,9 +166,11 @@ import { issuesService } from '@/api/services/issues.service'
 
 #### 5. Export System
 Advanced export functionality with multiple formats:
-- **Enhanced Export Service**: `src/services/enhanced-export.service.ts`
-- **Export Job Orchestrator**: `src/services/exports/export-job-orchestrator.ts`
+- **Standard Export Service**: `src/services/export.service.ts` - Handles CSV, Excel (.xlsx), and JSON exports
+- **Enhanced Export Service**: `src/services/enhanced-export.service.ts` - Multi-sheet Excel exports with formatting (used by WorkflowExporter)
 - **Format Support**: CSV, Excel (.xlsx), JSON
+
+**Note**: The codebase has been simplified to remove over-engineered alternatives. Use the standard export service for most cases, and the enhanced service only when multi-sheet Excel exports with formatting are required.
 
 Handles large datasets with chunking, progress tracking, and memory management.
 
@@ -141,10 +178,50 @@ Handles large datasets with chunking, progress tracking, and memory management.
 High-performance virtualized tables for large datasets:
 - **Core**: `src/components/ui/DataTable.tsx`
 - **Virtualization**: TanStack Virtual for row virtualization
-- **Features**: Filtering, sorting, column reordering, selection, pagination
-- **Custom Hooks**: `src/hooks/useTableCore.ts`, `useTableFiltering.ts`, `useTableSorting.ts`
+- **Features**: Filtering, sorting, column reordering, selection, pagination, column visibility
+- **Table Hook**: `src/hooks/useTableCore.ts` - Single, simplified hook for all table functionality
+- **Persistence**: Tenant-specific persistence for column widths, order, and visibility
+
+**Note**: The codebase has been simplified to use ONE table hook (`useTableCore.ts`). Previous "enhanced" alternatives have been removed in favor of this battle-tested implementation.
 
 Performance considerations documented in `src/config/table-virtualization.ts`.
+
+##### Table State Persistence
+
+The table system automatically persists three types of state per tenant:
+
+1. **Column Widths** - User-adjusted column sizes (via drag handles)
+2. **Column Order** - Custom column arrangement via drag-and-drop
+3. **Column Visibility** - Hidden/visible column preferences (via column visibility menu)
+
+**Storage Keys Pattern:**
+- `table-column-widths-{entityType}-{tenantSlug}`
+- `table-column-order-{entityType}-{tenantSlug}`
+- `table-column-visibility-{entityType}-{tenantSlug}`
+
+**Enable Persistence:**
+```typescript
+<Table
+  data={data}
+  columns={columns}
+  entityType="issue"           // Required for persistence keys
+  tenantSlug={currentTenant}   // Required for tenant-specific persistence
+  enablePersistence={true}     // Enables all three persistence features
+/>
+```
+
+**How it Works:**
+- Persistence is automatically enabled when both `entityType` and `tenantSlug` are provided
+- Each tenant maintains separate preferences for all three features
+- State is loaded on component mount and saved with 500ms debounce
+- Uses `storageManager` (backed by electron-store in Electron, localStorage as fallback)
+- Validation ensures persisted state is valid before applying
+
+**Implementation Details:**
+- Column widths persist when `enableColumnResizing={true}` (default)
+- Column order persists automatically when tenant context is available
+- Column visibility persists automatically when tenant context is available
+- See `src/hooks/useTableCore.ts` (lines 103-107, 256-267, 338-441, 512-534)
 
 #### 7. Tool Header Pattern
 Standardized header components for consistent UI:
@@ -241,7 +318,7 @@ When modifying `electron/*.cjs` files, **restart the entire dev process** (kill 
 
 ### Adding a New Export Format
 1. Extend `ExportFormat` type in `src/types/export.ts`
-2. Add format handler in `src/services/enhanced-export.service.ts`
+2. Add format handler in `src/services/export.service.ts` (or `enhanced-export.service.ts` for multi-sheet Excel)
 3. Update format selection UI in exporter components
 
 ### Adding a New Tool/Feature
@@ -254,6 +331,34 @@ When modifying `electron/*.cjs` files, **restart the entire dev process** (kill 
 1. Add state and actions to appropriate store in `src/stores/`
 2. Export new selectors from store file
 3. Use in components with `useAuthStore()`, `useTenantStore()`, etc.
+
+### Working with Table Persistence
+When using the Table component with tenant-specific data:
+1. **Always provide both `entityType` and `tenantSlug`** - This enables automatic persistence
+2. **Column widths, order, and visibility are persisted automatically** - No additional code needed
+3. **Users' table preferences are isolated per tenant** - Each tenant has separate saved preferences
+4. **Persistence uses debounced saves (500ms)** - Prevents excessive storage writes during rapid changes
+
+Example:
+```typescript
+import { useTenantStore } from '@/stores/tenant.store'
+
+function IssuesExporter() {
+  const currentTenant = useTenantStore(state => state.currentTenant)
+
+  return (
+    <Table
+      data={issues}
+      columns={columns}
+      entityType="issue"
+      tenantSlug={currentTenant?.slug}  // Required for persistence
+      enablePersistence={true}           // Optional (default: true)
+    />
+  )
+}
+```
+
+**Migration Note**: The legacy `useTablePersistence` hook is deprecated. Use the built-in persistence in `useTableCore`/`Table` instead.
 
 ## Build & Distribution
 

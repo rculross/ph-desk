@@ -214,8 +214,8 @@ export function ConnectedApis({ className }: ConnectedApisProps) {
           source: 'standard' as const,
           cellRenderer: ({ row }: any) => {
             const user = row.original
-            const firstName = user.firstName || ''
-            const lastName = user.lastName || ''
+            const firstName = user.firstName ?? ''
+            const lastName = user.lastName ?? ''
             return `${lastName}, ${firstName}`.replace(/^,\s*|,\s*$/g, '') // Remove leading/trailing commas
           }
         },
@@ -334,7 +334,7 @@ export function ConnectedApis({ className }: ConnectedApisProps) {
               const user = row.original
               const calendarToSave = user.msCalendarApi?.calendarToSave
               if (!calendarToSave || typeof calendarToSave !== 'object') return ''
-              return calendarToSave.name || ''
+              return calendarToSave.name ?? ''
             }
           }
         )
@@ -490,7 +490,7 @@ export function ConnectedApis({ className }: ConnectedApisProps) {
       <OrderColumnsModal
         visible={reorderControl.isActive}
         onClose={reorderControl.setActive.bind(null, false)}
-        columns={fieldDetection.fieldMappings || []}
+        columns={fieldDetection.fieldMappings ?? []}
         onColumnsReorder={handleColumnsReorder}
         title="Reorder Connected APIs Columns"
         loading={fieldDetection.isLoading}

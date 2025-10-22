@@ -122,7 +122,7 @@ export function createApiError(
   if (error instanceof TypeError || (error instanceof Error && error.name === 'TypeError')) {
     return {
       code: ERROR_CODES.NETWORK_TYPE_ERROR,
-      message: error.message || 'Network request failed',
+      message: error.message ?? 'Network request failed',
       timestamp: Date.now(),
       retryable: true,
       originalError: error,
@@ -150,7 +150,7 @@ export function createApiError(
   )) {
     return {
       code: ERROR_CODES.TIMEOUT,
-      message: error.message || 'Request timed out',
+      message: error.message ?? 'Request timed out',
       timestamp: Date.now(),
       retryable: true,
       originalError: error,
@@ -162,7 +162,7 @@ export function createApiError(
   if (error && typeof error === 'object' && 'field' in error) {
     return {
       code: ERROR_CODES.VALIDATION_ERROR,
-      message: (error as any).message || 'Validation failed',
+      message: (error as any).message ?? 'Validation failed',
       timestamp: Date.now(),
       retryable: false,
       originalError: error,
@@ -174,7 +174,7 @@ export function createApiError(
   if (error instanceof Error) {
     return {
       code: ERROR_CODES.UNKNOWN_ERROR,
-      message: error.message || 'An unknown error occurred',
+      message: error.message ?? 'An unknown error occurred',
       timestamp: Date.now(),
       retryable: false,
       originalError: error,
@@ -412,7 +412,7 @@ export function getUserFriendlyMessage(error: ApiError): string {
       return 'The selected workspace was not found.'
 
     default:
-      return error.message || 'An unexpected error occurred. Please try again.'
+      return error.message ?? 'An unexpected error occurred. Please try again.'
   }
 }
 
@@ -422,7 +422,7 @@ export function getUserFriendlyMessage(error: ApiError): string {
 export function createRateLimitError(message?: string, context?: any): ApiError {
   return {
     code: ERROR_CODES.RATE_LIMITED,
-    message: message || 'Rate limit exceeded',
+    message: message ?? 'Rate limit exceeded',
     status: 429,
     timestamp: Date.now(),
     retryable: true,

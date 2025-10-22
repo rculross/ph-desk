@@ -1,9 +1,11 @@
 const { Menu, app, shell, dialog, BrowserWindow } = require('electron');
 const path = require('path');
 
+// Get preferences instance from main.cjs
+let getPreferencesFromMain = null;
+
 // Store reference to main window
 let mainWindow = null;
-let preferencesWindow = null;
 
 /**
  * Set the main window reference
@@ -14,60 +16,32 @@ function setMainWindow(window) {
 }
 
 /**
- * Open preferences window
+ * Set function to get preferences from main process
+ * @param {Function} getPreferencesFn - Function that returns preferences instance
  */
-function openPreferencesWindow() {
-  // If preferences window already exists, focus it
-  if (preferencesWindow && !preferencesWindow.isDestroyed()) {
-    preferencesWindow.focus();
-    return;
-  }
-
-  // Create new preferences window
-  preferencesWindow = new BrowserWindow({
-    width: 700,
-    height: 500,
-    minWidth: 600,
-    minHeight: 400,
-    title: 'Preferences',
-    parent: mainWindow,
-    modal: process.platform !== 'darwin', // Modal on Windows/Linux
-    show: false,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(__dirname, 'preload.cjs')
-    }
-  });
-
-  // Load preferences page
-  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
-  if (isDev) {
-    const devUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
-    preferencesWindow.loadURL(`${devUrl}#preferences`);
-  } else {
-    preferencesWindow.loadFile(path.join(__dirname, '../dist/index.html'), {
-      hash: 'preferences'
-    });
-  }
-
-  preferencesWindow.once('ready-to-show', () => {
-    preferencesWindow.show();
-  });
-
-  preferencesWindow.on('closed', () => {
-    preferencesWindow = null;
-  });
+function setPreferencesGetter(getPreferencesFn) {
+  getPreferencesFromMain = getPreferencesFn;
 }
 
 /**
- * Open settings in main window
+ * Open preferences window using electron-preferences
  */
-function openSettings() {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    // Send message to renderer to navigate to settings
-    mainWindow.webContents.send('navigate-to', 'settings');
+function openPreferencesWindow() {
+  if (!getPreferencesFromMain) {
+    console.error('[Menu] Preferences getter not set');
+    return;
   }
+
+  const preferences = getPreferencesFromMain();
+
+  if (!preferences) {
+    console.error('[Menu] Preferences not initialized');
+    return;
+  }
+
+  // Show preferences window (electron-preferences handles window creation)
+  preferences.show();
+  console.log('[Menu] Opened preferences window');
 }
 
 /**
@@ -105,14 +79,9 @@ function createMenu() {
       label: 'File',
       submenu: [
         {
-          label: 'Preferences',
+          label: 'Preferences...',
           accelerator: 'CmdOrCtrl+,',
           click: openPreferencesWindow
-        },
-        {
-          label: 'Settings',
-          accelerator: 'CmdOrCtrl+Shift+,',
-          click: openSettings
         },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' }
@@ -145,7 +114,9 @@ function createMenu() {
         { role: 'zoomIn' },
         { role: 'zoomOut' },
         { type: 'separator' },
-        { role: 'togglefullscreen' }
+        { role: 'togglefullscreen' },
+        { type: 'separator' },
+        { role: 'toggleDevTools' }
       ]
     },
 
@@ -261,7 +232,7 @@ module.exports = {
   initializeMenu,
   updateMenuState,
   setMainWindow,
+  setPreferencesGetter,
   openPreferencesWindow,
-  openSettings,
   showAboutDialog
 };

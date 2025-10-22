@@ -104,7 +104,7 @@ export function WorkflowTemplateExporter({ className }: WorkflowTemplateExporter
   // Fetch users data for user name lookup in Created By column
   useUsersQuery()
 
-  const workflowTemplates = workflowTemplatesData || []
+  const workflowTemplates = workflowTemplatesData ?? []
   const totalCount = workflowTemplates.length
 
   const exportDefaults = useMemo<WorkflowExportConfiguration>(
@@ -361,7 +361,7 @@ export function WorkflowTemplateExporter({ className }: WorkflowTemplateExporter
       <OrderColumnsModal
         visible={reorderControl.isActive}
         onClose={reorderControl.setActive.bind(null, false)}
-        columns={fieldDetection.fieldMappings || []}
+        columns={fieldDetection.fieldMappings ?? []}
         onColumnsReorder={handleColumnsReorder}
         title="Reorder Table Columns"
         loading={fieldDetection.isLoading}
@@ -400,7 +400,7 @@ function getTypeColor(type: string): string {
     automation: 'bg-gray-100 text-gray-800',
     custom: 'bg-orange-100 text-orange-800'
   }
-  return colors[type as keyof typeof colors] || 'bg-gray-100 text-gray-800'
+  return colors[type as keyof typeof colors] ?? 'bg-gray-100 text-gray-800'
 }
 
 function getStatusColor(status: string): string {
@@ -410,5 +410,5 @@ function getStatusColor(status: string): string {
     paused: 'bg-yellow-100 text-yellow-800',
     archived: 'bg-red-100 text-red-800'
   }
-  return colors[status as keyof typeof colors] || 'bg-gray-100 text-gray-800'
+  return colors[status as keyof typeof colors] ?? 'bg-gray-100 text-gray-800'
 }

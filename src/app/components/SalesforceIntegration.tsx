@@ -108,7 +108,7 @@ export function SalesforceIntegration({ className }: SalesforceIntegrationProps)
   // Log component mount and data changes
   useEffect(() => {
     log.info('SalesforceIntegration component mounted', logSanitizer.forDebug({
-      tenantSlug: tenantSlug || 'none',
+      tenantSlug: tenantSlug ?? 'none',
       hasData: !!integrationData
     }))
   }, [log, tenantSlug, integrationData])
@@ -146,7 +146,7 @@ export function SalesforceIntegration({ className }: SalesforceIntegrationProps)
       if (result.success) {
         toast.success(`Connection successful (${result.responseTime}ms)`)
       } else {
-        toast.error(`Connection failed: ${result.error || 'Unknown error'}`)
+        toast.error(`Connection failed: ${result.error ?? 'Unknown error'}`)
       }
     } catch (connectError) {
       const errorMessage = connectError instanceof Error ? connectError.message : 'Connectivity test failed'

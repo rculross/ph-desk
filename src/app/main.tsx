@@ -1,13 +1,12 @@
 import React from 'react'
 
+import { QueryClientProvider } from '@tanstack/react-query'
 import { createRoot } from 'react-dom/client'
 
 import '../styles/globals.css'
 
-// Import Chrome API compatibility shim for Electron
-import '../utils/chrome-api-shim'
-
 import { api } from '../api'
+import { queryClient } from '../api/query-client'
 import { logger, initializeLoggerFromStorage } from '../utils/logger'
 import { ensureReactInitialized } from '../utils/react-fix'
 
@@ -54,7 +53,9 @@ async function initializeDesktopApp() {
       const root = createRoot(fallbackContainer)
       root.render(
         <React.StrictMode>
-          <App />
+          <QueryClientProvider client={queryClient}>
+            <App />
+          </QueryClientProvider>
         </React.StrictMode>
       )
       return
@@ -63,7 +64,9 @@ async function initializeDesktopApp() {
     const root = createRoot(container)
     root.render(
       <React.StrictMode>
-        <App />
+        <QueryClientProvider client={queryClient}>
+          <App />
+        </QueryClientProvider>
       </React.StrictMode>
     )
 
@@ -94,7 +97,11 @@ async function initializeDesktopApp() {
             if (container && document.body) {
               document.body.appendChild(container)
               const root = createRoot(container)
-              root.render(<App />)
+              root.render(
+                <QueryClientProvider client={queryClient}>
+                  <App />
+                </QueryClientProvider>
+              )
               logger.content.info('Emergency late initialization completed')
             }
           })
@@ -103,7 +110,11 @@ async function initializeDesktopApp() {
       }
 
       const root = createRoot(container)
-      root.render(<App />)
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <App />
+        </QueryClientProvider>
+      )
       logger.content.info('Fallback rendering completed successfully')
 
     } catch (fallbackError) {

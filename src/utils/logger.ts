@@ -67,16 +67,16 @@ const createLogger = (context: string, targetConsole: Console = safeConsole) => 
 
   // Override methods to add formatted prefix
   const originalFactory = contextLogger.methodFactory
-  contextLogger.methodFactory = (methodName: string, logLevel: any, loggerName: string) => {
+  contextLogger.methodFactory = (methodName: string, logLevel: LogLevelNumbers, loggerName: string) => {
     const rawMethod = originalFactory(methodName, logLevel, loggerName)
 
-    return (...args: any[]) => {
-      const levelCode = levelMap[methodName] || methodName.toUpperCase().slice(0, 3)
-      const contextCode = contextMap[context] || context.slice(0, 3)
+    return (...args: unknown[]) => {
+      const levelCode = levelMap[methodName] ?? methodName.toUpperCase().slice(0, 3)
+      const contextCode = contextMap[context] ?? context.slice(0, 3)
 
       // Track message counts
       if (messageCounter[methodName]) {
-        messageCounter[methodName][context] = (messageCounter[methodName][context] || 0) + 1
+        messageCounter[methodName][context] = (messageCounter[methodName][context] ?? 0) + 1
       }
 
       rawMethod.apply(targetConsole, [`[${levelCode} : ${contextCode}]`, ...args])
@@ -95,7 +95,15 @@ export const createContextLogger = (context: string, targetConsole?: Console) =>
   createLogger(context, targetConsole)
 
 // Export context-specific loggers matching the original API
-export const logger = {
+export const logger: {
+  bg: log.Logger
+  content: log.Logger
+  popup: log.Logger
+  api: log.Logger
+  extension: log.Logger
+  system: log.Logger
+  root: log.RootLogger
+} = {
   bg: createLogger('BACKGROUND'),
   content: createLogger('CONTENT'),
   popup: createLogger('POPUP'),
@@ -128,7 +136,7 @@ export const getLogCountsByLevel = (): Record<string, number> => {
   const totals: Record<string, number> = {}
 
   Object.keys(messageCounter).forEach(level => {
-    totals[level] = Object.values(messageCounter[level] || {}).reduce((sum, count) => sum + count, 0)
+    totals[level] = Object.values(messageCounter[level] ?? {}).reduce((sum, count) => sum + count, 0)
   })
 
   return totals
@@ -175,13 +183,13 @@ export const printLogCounts = (): void => {
 export const initializeLoggerFromStorage = async (): Promise<void> => {
   try {
     // Check if Chrome APIs are available
-    if (!chrome.storage) {
+    if (!window.electron.storage) {
       logger.system.info('Chrome storage not available, using default log level')
       return
     }
 
     // Load saved log level from Chrome storage
-    const result = await chrome.storage.local.get(['logLevel'])
+    const result = await window.electron.storage.get(['logLevel'])
     const savedLevel = result.logLevel as 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'silent' | undefined
 
     if (savedLevel) {

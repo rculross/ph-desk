@@ -27,48 +27,43 @@ export async function ensureReactInitialized(): Promise<void> {
     return reactInitPromise
   }
 
-  reactInitPromise = new Promise<void>((resolve) => {
-    // Force React to initialize all its internal hooks by importing and accessing them
-    Promise.resolve().then(async () => {
-      try {
-        // Import React and force initialization of internal structures
-        const React = await import('react')
-        const ReactDOM = await import('react-dom/client')
-        
-        // Create a dummy element to force React's internal initialization
-        const testDiv = document.createElement('div')
-        testDiv.style.display = 'none'
-        document.body.appendChild(testDiv)
-        
-        // Force React to initialize its internal hooks by creating a root
-        const root = ReactDOM.createRoot(testDiv)
-        
-        // Render a simple component to trigger all hook initializations
-        const TestComponent = () => {
-          React.useState(null)
-          React.useEffect(() => {}, [])
-          React.useMemo(() => null, [])
-          return null
-        }
-        
-        root.render(React.createElement(TestComponent))
-        
-        // Clean up immediately
-        setTimeout(() => {
-          root.unmount()
-          document.body.removeChild(testDiv)
-        }, 0)
-        
-        reactInitialized = true
-        resolve()
-      } catch (error) {
-        console.error('Failed to initialize React fix:', error)
-        // Continue anyway - the error might resolve itself
-        reactInitialized = true
-        resolve()
+  reactInitPromise = (async () => {
+    try {
+      // Import React and force initialization of internal structures
+      const React = await import('react')
+      const ReactDOM = await import('react-dom/client')
+
+      // Create a dummy element to force React's internal initialization
+      const testDiv = document.createElement('div')
+      testDiv.style.display = 'none'
+      document.body.appendChild(testDiv)
+
+      // Force React to initialize its internal hooks by creating a root
+      const root = ReactDOM.createRoot(testDiv)
+
+      // Render a simple component to trigger all hook initializations
+      const TestComponent = () => {
+        React.useState(null)
+        React.useEffect(() => {}, [])
+        React.useMemo(() => null, [])
+        return null
       }
-    })
-  })
+
+      root.render(React.createElement(TestComponent))
+
+      // Clean up immediately
+      setTimeout(() => {
+        root.unmount()
+        document.body.removeChild(testDiv)
+      }, 0)
+
+      reactInitialized = true
+    } catch (error) {
+      console.error('Failed to initialize React fix:', error)
+      // Continue anyway - the error might resolve itself
+      reactInitialized = true
+    }
+  })()
 
   return reactInitPromise
 }

@@ -64,9 +64,9 @@ class ApiKeyManagerService {
         log.error('API key integrity check FAILED', {
           provider,
           originalLength: apiKey.length,
-          decryptedLength: decryptedKey.length || 0,
+          decryptedLength: decryptedKey.length ?? 0,
           originalPrefix: apiKey.slice(0, 15),
-          decryptedPrefix: decryptedKey.slice(0, 15) || 'NULL',
+          decryptedPrefix: decryptedKey.slice(0, 15) ?? 'NULL',
           base64Lengths: {
             encrypted: encryptedBase64.length,
             salt: saltBase64.length,

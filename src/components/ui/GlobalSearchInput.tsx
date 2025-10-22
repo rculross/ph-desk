@@ -30,7 +30,7 @@ export function GlobalSearchInput<TData>({
   debounceMs = 300
 }: GlobalSearchInputProps<TData>) {
   const [searchValue, setSearchValue] = useState('')
-  const globalFilterValue = table.getState().globalFilter || ''
+  const globalFilterValue = table.getState().globalFilter ?? ''
 
   // Sync internal state with table state
   useEffect(() => {

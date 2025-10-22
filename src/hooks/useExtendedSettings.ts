@@ -27,15 +27,15 @@ export function useExtendedSettings() {
     const loadSettings = async () => {
       log.info('Loading extended settings from storage')
       
-      // Check if Chrome APIs are available
-      if (!chrome.storage.local) {
-        log.warn('Chrome storage API not available, using defaults')
+      // Check if Electron APIs are available
+      if (!window.electron.storage) {
+        log.warn('Electron storage API not available, using defaults')
         setLoading(false)
         return
       }
-      
+
       try {
-        const result = await chrome.storage.local.get(STORAGE_KEY)
+        const result = await window.electron.storage.get([STORAGE_KEY])
         if (result[STORAGE_KEY]) {
           log.debug('Found saved settings in storage')
           
@@ -48,16 +48,12 @@ export function useExtendedSettings() {
           })
           
           // Merge with defaults to ensure all fields exist
-          const mergedSettings = {
+          const mergedSettings: ExtendedUserSettings = {
             ...defaultExtendedSettings,
             ...savedSettings,
             export: {
               ...defaultExtendedSettings.export,
               ...savedSettings.export
-            },
-            ui: {
-              ...defaultExtendedSettings.ui,
-              ...savedSettings.ui
             },
             performance: {
               ...defaultExtendedSettings.performance,
@@ -98,30 +94,21 @@ export function useExtendedSettings() {
     setSaving(true)
     setError(null)
 
-    // Check if Chrome APIs are available
-    if (!chrome.storage.local) {
-      log.warn('Chrome storage API not available, cannot save settings')
+    // Check if Electron APIs are available
+    if (!window.electron.storage) {
+      log.warn('Electron storage API not available, cannot save settings')
       setSaving(false)
-      setError('Storage not available - extension context required')
+      setError('Storage not available - Electron context required')
       return
     }
 
     try {
-      await chrome.storage.local.set({
+      await window.electron.storage.set({
         [STORAGE_KEY]: JSON.stringify(newSettings)
       })
-      
-      // Notify other parts of the extension about settings change
-      if (chrome.runtime.sendMessage) {
-        log.debug('Notifying other extension contexts about settings update')
-        await chrome.runtime.sendMessage({
-          type: 'SETTINGS_UPDATED',
-          settings: newSettings
-        }).catch((err) => {
-          // Ignore errors if background script is not ready
-          log.warn('Could not notify background script about settings update', { error: err?.message })
-        })
-      }
+
+      // Settings change propagates through Zustand store subscriptions in desktop app
+      // No need for runtime messaging
 
       log.info('Settings saved successfully')
     } catch (err) {

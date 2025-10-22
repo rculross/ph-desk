@@ -90,7 +90,7 @@ export function useOptimisticUpdate<T>() {
         const result = await mutationFn()
 
         // Invalidate to get fresh data
-        queryClient.invalidateQueries({ queryKey })
+        void queryClient.invalidateQueries({ queryKey })
 
         return result
       } catch (error) {
@@ -120,7 +120,7 @@ export function useBatchOperation<TItem, TResult>() {
         onError?: (error: Error, item: TItem, index: number) => void
       }
     ) => {
-      const { batchSize = 5, onProgress, onError } = options || {}
+      const { batchSize = 5, onProgress, onError } = options ?? {}
 
       setIsRunning(true)
       setProgress({ completed: 0, total: items.length, errors: [] })
@@ -242,7 +242,7 @@ export function usePaginatedData<T>(
   // Load initial data
   React.useEffect(() => {
     if (allData.length === 0 && hasMore) {
-      loadMore()
+      void loadMore()
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -270,7 +270,7 @@ export function useRealTimeQuery<T>(
   }
 ) {
   const queryClient = useQueryClient()
-  const { interval = 30000, enabled = true, onData } = options || {}
+  const { interval = 30000, enabled = true, onData } = options ?? {}
 
   React.useEffect(() => {
     if (!enabled) return undefined
@@ -303,34 +303,34 @@ export function useQueryInvalidation() {
       const key = queryKeys[entityType]
       // Only invalidate if it's a base key (not a function)
       if (typeof key !== 'function') {
-        queryClient.invalidateQueries({ queryKey: key })
+        void queryClient.invalidateQueries({ queryKey: key })
       }
     },
 
     // Invalidate all list queries
     invalidateLists: () => {
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         predicate: query => query.queryKey.includes('list')
       })
     },
 
     // Invalidate all search queries
     invalidateSearches: () => {
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         predicate: query => query.queryKey[0] === 'search'
       })
     },
 
     // Invalidate all stats/analytics queries
     invalidateStats: () => {
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         predicate: query => query.queryKey.includes('stats') || query.queryKey.includes('analytics')
       })
     },
 
     // Invalidate everything (nuclear option)
     invalidateAll: () => {
-      queryClient.invalidateQueries()
+      void queryClient.invalidateQueries()
     }
   }
 }
@@ -370,8 +370,8 @@ export function useQueryHealth() {
         .getAll()
         .map(query => ({
           queryKey: query.queryKey,
-          lastFetch: query.state.dataUpdatedAt || 0,
-          age: Date.now() - (query.state.dataUpdatedAt || 0)
+          lastFetch: query.state.dataUpdatedAt ?? 0,
+          age: Date.now() - (query.state.dataUpdatedAt ?? 0)
         }))
         .sort((a, b) => b.age - a.age)
         .slice(0, limit)

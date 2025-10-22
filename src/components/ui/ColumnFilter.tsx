@@ -155,7 +155,7 @@ export function ColumnFilter<TData>({
       default:
         return (
           <Input
-            value={tempValue || ''}
+            value={tempValue ?? ''}
             onChange={(e) => setTempValue(e.target.value)}
             placeholder={`Search ${String(column.id)}...`}
             prefix={<SearchOutlined />}

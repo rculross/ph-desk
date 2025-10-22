@@ -362,7 +362,7 @@ export const queryPerformance = {
 
     cache.getAll().forEach(query => {
       const { dataUpdatedAt, errorUpdatedAt } = query.state
-      const lastUpdate = Math.max(dataUpdatedAt || 0, errorUpdatedAt || 0)
+      const lastUpdate = Math.max(dataUpdatedAt ?? 0, errorUpdatedAt ?? 0)
       const duration = Date.now() - lastUpdate
 
       if (duration > threshold) {
@@ -406,8 +406,8 @@ export const extensionOptimizations = {
     // Remove oldest queries if cache is too large
     if (queries.length > 100) {
       const sortedQueries = queries.sort((a, b) => {
-        const aTime = Math.max(a.state.dataUpdatedAt || 0, a.state.errorUpdatedAt || 0)
-        const bTime = Math.max(b.state.dataUpdatedAt || 0, b.state.errorUpdatedAt || 0)
+        const aTime = Math.max(a.state.dataUpdatedAt ?? 0, a.state.errorUpdatedAt ?? 0)
+        const bTime = Math.max(b.state.dataUpdatedAt ?? 0, b.state.errorUpdatedAt ?? 0)
         return aTime - bTime
       })
 

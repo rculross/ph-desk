@@ -736,21 +736,21 @@ export class FieldDetectionService {
     }
 
     try {
-      await chrome.storage.local.set({ [key]: state })
-      
+      await window.electron.storage.set({ [key]: state })
+
       // Update cache
       this.fieldSelectionsCache.set(key, selectedFields)
-      
-      log.info('Field selections saved', { 
-        entityType, 
-        tenantSlug, 
-        selectedCount: selectedFields.length 
+
+      log.info('Field selections saved', {
+        entityType,
+        tenantSlug,
+        selectedCount: selectedFields.length
       })
     } catch (error) {
-      log.error('Failed to save field selections', { 
-        entityType, 
-        tenantSlug, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+      log.error('Failed to save field selections', {
+        entityType,
+        tenantSlug,
+        error: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }
@@ -772,30 +772,30 @@ export class FieldDetectionService {
     }
 
     try {
-      const result = await chrome.storage.local.get(key)
+      const result = await window.electron.storage.get([key])
       const state = result[key] as FieldSelectionState | undefined
-      
+
       if (state?.selectedFields) {
         // Update cache
         this.fieldSelectionsCache.set(key, state.selectedFields)
-        
-        log.debug('Field selections loaded from storage', { 
-          entityType, 
-          tenantSlug, 
+
+        log.debug('Field selections loaded from storage', {
+          entityType,
+          tenantSlug,
           selectedCount: state.selectedFields.length,
           lastUpdated: state.lastUpdated
         })
-        
+
         return state.selectedFields
       } else {
         log.debug('No saved field selections found', { entityType, tenantSlug })
         return []
       }
     } catch (error) {
-      log.error('Failed to load field selections', { 
-        entityType, 
-        tenantSlug, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+      log.error('Failed to load field selections', {
+        entityType,
+        tenantSlug,
+        error: error instanceof Error ? error.message : 'Unknown error'
       })
       return []
     }
@@ -921,7 +921,7 @@ export class FieldDetectionService {
     }
 
     try {
-      await chrome.storage.local.set({ [key]: state })
+      await window.electron.storage.set({ [key]: state })
 
       // Update cache
       this.columnOrderCache.set(key, columnOrder)
@@ -957,7 +957,7 @@ export class FieldDetectionService {
     }
 
     try {
-      const result = await chrome.storage.local.get(key)
+      const result = await window.electron.storage.get([key])
       const state = result[key] as ColumnOrderState | undefined
 
       if (state?.columnOrder) {
@@ -1004,7 +1004,7 @@ export class FieldDetectionService {
     }
 
     try {
-      await chrome.storage.local.set({ [key]: state })
+      await window.electron.storage.set({ [key]: state })
 
       // Update cache
       this.columnWidthCache.set(key, columnWidths)
@@ -1039,7 +1039,7 @@ export class FieldDetectionService {
     }
 
     try {
-      const result = await chrome.storage.local.get(key)
+      const result = await window.electron.storage.get([key])
       const state = result[key] as ColumnWidthState | undefined
 
       if (state?.columnWidths) {
@@ -1095,7 +1095,7 @@ export class FieldDetectionService {
     })
 
     // Sort by order to maintain consistency
-    fieldMappings.sort((a, b) => (a.order || 0) - (b.order || 0))
+    fieldMappings.sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
 
     log.debug('Applied column order', {
       appliedOrders: fieldMappings.map(m => ({ key: m.key, order: m.order }))
@@ -1181,14 +1181,14 @@ export class FieldDetectionService {
       if (entityType && tenantSlug) {
         // Clear specific entity and tenant
         const key = this.getColumnWidthStorageKey(entityType, tenantSlug)
-        await chrome.storage.local.remove(key)
+        await window.electron.storage.remove([key])
         this.columnWidthCache.delete(key)
         log.info('Column widths cleared for specific entity and tenant', { entityType, tenantSlug })
       } else if (entityType) {
         // Clear all for specific entity type
         const keys = [`column-widths-${entityType}`, `table-column-widths-${entityType}`]
         // Also get all tenant-specific keys for this entity
-        const allData = await chrome.storage.local.get(null)
+        const allData = await window.electron.storage.get(null)
         const entityKeys = Object.keys(allData).filter(key =>
           key.startsWith(`column-widths-${entityType}-`) ||
           key.startsWith(`table-column-widths-${entityType}-`)
@@ -1196,19 +1196,19 @@ export class FieldDetectionService {
         const allKeys = [...keys, ...entityKeys]
 
         if (allKeys.length > 0) {
-          await chrome.storage.local.remove(allKeys)
+          await window.electron.storage.remove(allKeys)
           allKeys.forEach(key => this.columnWidthCache.delete(key))
         }
         log.info('Column widths cleared for entity type', { entityType, clearedKeys: allKeys.length })
       } else {
         // Clear all column width data
-        const allData = await chrome.storage.local.get(null)
+        const allData = await window.electron.storage.get(null)
         const widthKeys = Object.keys(allData).filter(key =>
           key.startsWith('column-widths-') || key.startsWith('table-column-widths-')
         )
 
         if (widthKeys.length > 0) {
-          await chrome.storage.local.remove(widthKeys)
+          await window.electron.storage.remove(widthKeys)
           this.columnWidthCache.clear()
         }
         log.info('All column widths cleared', { clearedKeys: widthKeys.length })

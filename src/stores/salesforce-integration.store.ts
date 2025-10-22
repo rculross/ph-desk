@@ -373,7 +373,7 @@ export const useSalesforceIntegrationStore = create<SalesforceIntegrationUIStore
                 key: name,
                 error: error instanceof Error ? error.message : 'Unknown error'
               })
-              const fallbackResult = await chrome.storage.local.get([name])
+              const fallbackResult = await window.electron.storage.get([name])
               return fallbackResult[name] ?? null
             }
           },
@@ -400,7 +400,7 @@ export const useSalesforceIntegrationStore = create<SalesforceIntegrationUIStore
                 key: name,
                 error: error instanceof Error ? error.message : 'Unknown error'
               })
-              await chrome.storage.local.remove([name])
+              await window.electron.storage.remove([name])
             }
           }
         })),

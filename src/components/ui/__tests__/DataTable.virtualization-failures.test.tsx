@@ -47,9 +47,9 @@ function generateTestData(size: number): LargeDatasetRow[] {
     email: `user${i}@example.com`,
     company: `Company ${Math.floor(i / 100)}`,
     value: Math.random() * 1000,
-    status: ['active', 'inactive', 'pending'][i % 3],
+    status: (['active', 'inactive', 'pending'][i % 3]) ?? 'active',
     date: new Date(2024, 0, 1 + (i % 365)).toISOString(),
-    category: ['A', 'B', 'C', 'D'][i % 4],
+    category: (['A', 'B', 'C', 'D'][i % 4]) ?? 'A',
     notes: `Notes for user ${i}`.repeat(Math.floor(Math.random() * 5) + 1),
     metadata: {
       tags: [`tag${i % 10}`, `tag${(i + 1) % 10}`],
@@ -83,8 +83,12 @@ Object.defineProperty(window, 'performance', {
 const mockIntersectionObserver = vi.fn(() => ({
   observe: vi.fn(),
   unobserve: vi.fn(),
-  disconnect: vi.fn()
-}))
+  disconnect: vi.fn(),
+  root: null,
+  rootMargin: '',
+  thresholds: [],
+  takeRecords: vi.fn(() => [])
+})) as unknown as typeof IntersectionObserver
 window.IntersectionObserver = mockIntersectionObserver
 
 // Mock ResizeObserver with error simulation
@@ -390,7 +394,6 @@ describe('DataTable Virtualization Failure Tests', () => {
     // Try to trigger memory pressure with very large dataset
     const veryLargeData = generateTestData(50000)
 
-    let renderTime: number
     const startTime = performance.now()
 
     expect(() => {
@@ -403,8 +406,9 @@ describe('DataTable Virtualization Failure Tests', () => {
           columnOverscan={1}
         />
       )
-      renderTime = performance.now() - startTime
     }).not.toThrow()
+
+    const renderTime = performance.now() - startTime
 
     // Should render efficiently even with large dataset
     expect(renderTime).toBeLessThan(5000) // Less than 5 seconds

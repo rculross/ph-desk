@@ -3,9 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- CSP relaxed for Electron development - Vite HMR requires 'unsafe-eval' -->
-    <!-- In production builds, Electron has its own security model -->
-    <title>PH Tools Desktop</title>
+    <!-- CSP for Electron development - Vite HMR requires 'unsafe-eval' -->
+    <!-- In production builds, Electron has its own security model via session configuration -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.planhat.com https://login.planhat.com ws://localhost:* wss://localhost:*; font-src 'self' data:;"
+    />
+    <title>Planhat Tools</title>
   </head>
   <body>
     <div id="root"></div>

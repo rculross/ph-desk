@@ -11,14 +11,7 @@ export interface ExtendedUserSettings extends UserSettings {
     includeHeaders: boolean
     autoDownload: boolean
   }
-  
-  // UI Enhancements
-  ui: {
-    enhancedLogs: boolean
-    wideModalDropdowns: boolean
-    diffHighlighting: boolean
-  }
-  
+
   // Performance Settings
   performance: {
     exportBatchSize: 500 | 1000 | 2000 | 5000
@@ -52,11 +45,6 @@ export const defaultExtendedSettings: ExtendedUserSettings = {
     defaultFormat: 'csv',
     includeHeaders: true,
     autoDownload: false
-  },
-  ui: {
-    enhancedLogs: false,
-    wideModalDropdowns: false,
-    diffHighlighting: false
   },
   performance: {
     exportBatchSize: 1000,

@@ -121,7 +121,7 @@ export function useCompanies(
         
         log.debug('Companies query completed successfully', {
           duration: Math.round(endTime - startTime),
-          recordCount: result.data.length || 0,
+          recordCount: result.data.length ?? 0,
           total: result.total,
           hasMore: result.hasMore,
           limit: result.limit,
@@ -170,7 +170,7 @@ export function useCompaniesInfinite(filters?: CompanyFilters, limit: number = 2
         log.debug('Infinite companies query page completed', {
           duration: Math.round(endTime - startTime),
           page: pageParam,
-          recordCount: result.data.length || 0,
+          recordCount: result.data.length ?? 0,
           hasMore: result.hasMore
         })
         
@@ -394,8 +394,8 @@ export function useCreateCompany() {
       queryClient.setQueryData(queryKeys.company(newCompany._id), newCompany)
 
       // Invalidate lists
-      queryClient.invalidateQueries({ queryKey: queryKeys.companies })
-      queryClient.invalidateQueries({ queryKey: queryKeys.companyStats() })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.companies })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.companyStats() })
     },
     onError: (error) => {
       log.error('Company creation mutation failed', {
@@ -464,9 +464,9 @@ export function useUpdateCompany() {
     },
     onSettled: (data, error, { companyId }) => {
       log.debug('Invalidating company caches after update', { companyId })
-      queryClient.invalidateQueries({ queryKey: queryKeys.company(companyId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.companies })
-      queryClient.invalidateQueries({ queryKey: queryKeys.companyStats() })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.company(companyId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.companies })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.companyStats() })
     },
     meta: {
       successMessage: 'Company updated successfully'
@@ -480,9 +480,9 @@ export function useDeleteCompany() {
   return useMutation({
     mutationFn: (companyId: string) => companiesService.deleteCompany(companyId),
     onSuccess: (_, companyId) => {
-      queryClient.removeQueries({ queryKey: queryKeys.company(companyId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.companies })
-      queryClient.invalidateQueries({ queryKey: queryKeys.companyStats() })
+      void queryClient.removeQueries({ queryKey: queryKeys.company(companyId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.companies })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.companyStats() })
     },
     meta: {
       successMessage: 'Company deleted successfully'
@@ -503,10 +503,10 @@ export function useUpdateHealthScore() {
       })
 
       // Invalidate health-specific query
-      queryClient.invalidateQueries({ queryKey: queryKeys.companyHealth(companyId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.companyHealth(companyId) })
 
       // Invalidate at-risk companies as health score changed
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.companies, 'at-risk'] })
+      void queryClient.invalidateQueries({ queryKey: [...queryKeys.companies, 'at-risk'] })
     },
     meta: {
       successMessage: 'Health score updated successfully'
@@ -534,7 +534,7 @@ export function useAddIntegration() {
           return {
             ...old,
             integrations: [
-              ...(old.integrations || []),
+              ...(old.integrations ?? []),
               {
                 type: newIntegration.type,
                 name: newIntegration.name,
@@ -543,11 +543,11 @@ export function useAddIntegration() {
                 config: newIntegration.config
               }
             ],
-            totalIntegrations: (old.totalIntegrations || 0) + 1,
+            totalIntegrations: (old.totalIntegrations ?? 0) + 1,
             activeIntegrations:
               newIntegration.status === 'active'
-                ? (old.activeIntegrations || 0) + 1
-                : (old.activeIntegrations || 0)
+                ? (old.activeIntegrations ?? 0) + 1
+                : (old.activeIntegrations ?? 0)
           }
         }
       )
@@ -565,8 +565,8 @@ export function useSyncIntegration() {
     mutationFn: ({ companyId, integrationId }: { companyId: string; integrationId: string }) =>
       companiesService.syncIntegration(companyId, integrationId),
     onSuccess: (result, { companyId }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.companyIntegrations(companyId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.companyActivity(companyId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.companyIntegrations(companyId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.companyActivity(companyId) })
     },
     meta: {
       successMessage: 'Integration synced successfully'
@@ -582,7 +582,7 @@ export function useAddTags() {
       companiesService.addTags(companyId, tags),
     onSuccess: (updatedCompany, { companyId }) => {
       queryClient.setQueryData(queryKeys.company(companyId), updatedCompany)
-      queryClient.invalidateQueries({ queryKey: queryKeys.companies })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.companies })
     },
     meta: {
       successMessage: 'Tags added successfully'
@@ -605,7 +605,7 @@ export function useExportCompanies() {
       log.debug('Starting companies export', { 
         format,
         hasFilters: !!filters && Object.keys(filters).length > 0,
-        fieldCount: fields?.length || 0
+        fieldCount: fields?.length ?? 0
       })
       
       try {
@@ -697,7 +697,7 @@ export function useCompanyHealthMonitoring(companyId: string) {
     // Set up periodic health score updates
     const interval = setInterval(
       () => {
-        queryClient.invalidateQueries({ queryKey: queryKeys.companyHealth(companyId) })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.companyHealth(companyId) })
       },
       5 * 60 * 1000
     ) // Every 5 minutes

@@ -68,7 +68,7 @@ const formatTenantOption = (tenant: TenantInfo, tenantStatus?: { tenantSlug: str
   return {
     id: tenant.id,
     slug: tenant.slug,
-    name: tenant.tenantSlug || tenant.slug, // Use tenantSlug for display, fallback to slug
+    name: tenant.tenantSlug ?? tenant.slug, // Use tenantSlug for display, fallback to slug
     isActive: tenantStatus?.isActive ?? tenant.isActive, // Use status check result if available
     domain: tenant.domain,
     logo: tenant.logo,
@@ -86,6 +86,10 @@ const formatTenantOption = (tenant: TenantInfo, tenantStatus?: { tenantSlug: str
 export const useTenantSelector = (): UseTenantSelectorReturn => {
   const log = logger.extension // Using extension context as this hook is primarily used in extension contexts
   const queryClient = useQueryClient()
+
+  // Get auth state to check if user is authenticated before fetching tenants
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated)
+
   const {
     // State
     currentTenant: rawCurrentTenant,
@@ -94,12 +98,12 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
     isSwitchingTenant,
     error,
     switchTenantError,
-    
+
     // Tenant status state
     tenantStatuses,
     statusLoading,
     statusError,
-    
+
     // Actions
     fetchAvailableTenants,
     fetchAllTenantStatuses,
@@ -155,31 +159,32 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
         return formatTenantOption(tenant, tenantStatus)
       })
 
-    // Filter and collect inactive demo tenants for bulk logging
+    // Filter out ALL tenants where we don't have access (both production and demo)
+    // Only show tenants where /myprofile check succeeded (isActive = true)
     const filteredTenants: TenantOption[] = []
+    const inactiveProdTenants: string[] = []
     const inactiveDemoTenants: string[] = []
 
     formatted.forEach(tenant => {
-      // Keep all production tenants regardless of active status
-      if (tenant.environment === 'production') {
+      if (tenant.isActive) {
+        // Only include tenants where /myprofile returned 200
         filteredTenants.push(tenant)
-        return
-      }
-      // For demo tenants, only keep them if they're active (passed /myprofile check)
-      if (tenant.environment === 'demo') {
-        if (tenant.isActive) {
-          filteredTenants.push(tenant)
+      } else {
+        // Collect inactive tenants for logging
+        if (tenant.environment === 'production') {
+          inactiveProdTenants.push(tenant.slug)
         } else {
           inactiveDemoTenants.push(tenant.slug)
         }
-        return
       }
-      filteredTenants.push(tenant)
     })
 
-    // Log inactive demo tenants in bulk if any were filtered
+    // Log filtered tenants
+    if (inactiveProdTenants.length > 0) {
+      log.debug(`Filtered out inactive production tenants (no access): ${inactiveProdTenants.join(', ')}`)
+    }
     if (inactiveDemoTenants.length > 0) {
-      log.debug(`Filtering out inactive demo: ${inactiveDemoTenants.join(', ')}`)
+      log.debug(`Filtered out inactive demo tenants (no access): ${inactiveDemoTenants.join(', ')}`)
     }
 
     const sortedTenants = filteredTenants
@@ -199,19 +204,25 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
     const activeCount = sortedTenants.filter(t => t.isActive).length
     const prodCount = sortedTenants.filter(t => t.environment === 'production').length
     const demoCount = sortedTenants.filter(t => t.environment === 'demo').length
-    const filteredOutCount = inactiveDemoTenants.length
+    const filteredOutCount = inactiveProdTenants.length + inactiveDemoTenants.length
 
     if (filteredOutCount > 0) {
-      log.info(`Filtered out ${filteredOutCount} inactive demo tenants`)
+      log.info(`Filtered out ${filteredOutCount} tenants without access (${inactiveProdTenants.length} prod, ${inactiveDemoTenants.length} demo)`)
     }
 
-    log.debug(`Available tenants sorted: ${sortedTenants.length} total (${activeCount} active, ${sortedTenants.length - activeCount} inactive, ${prodCount} prod, ${demoCount} demo)`)
+    log.debug(`Available tenants (with access only): ${sortedTenants.length} total (${prodCount} prod, ${demoCount} demo, all active)`)
 
     return sortedTenants
   }, [rawAvailableTenants, tenantStatuses, getTenantStatus, log])
 
   // Fetch tenants and tenant statuses on mount if not already loaded or if data is incomplete
   useEffect(() => {
+    // Desktop app: Only fetch tenants if user is authenticated
+    if (!isAuthenticated) {
+      log.debug('User not authenticated - skipping tenant fetch')
+      return
+    }
+
     const hasTenants = rawAvailableTenants.length > 0
     const demoCount = rawAvailableTenants.filter(t => t.domain?.includes('planhatdemo.com')).length
     const hasDemo = demoCount > 0
@@ -238,7 +249,7 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
     } else {
       log.debug(`Hook initialized with existing data: ${rawAvailableTenants.length} tenants (${demoCount} demo), loading: ${isLoading}, error: ${!!error}`)
     }
-  }, [rawAvailableTenants.length, isLoading, error, fetchAvailableTenants, log])
+  }, [isAuthenticated, rawAvailableTenants.length, isLoading, error, fetchAvailableTenants, log])
 
   // Fetch tenant statuses when tenants are available
   useEffect(() => {
@@ -250,7 +261,7 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
 
   // Switch tenant with error handling and store clearing
   const switchTenant = useCallback(async (tenantSlug: string) => {
-    log.info(`Switching tenant from ${currentTenant?.slug || 'none'} to ${tenantSlug}`)
+    log.info(`Switching tenant from ${currentTenant?.slug ?? 'none'} to ${tenantSlug}`)
 
     try {
       // Clear all other stores when switching tenants
@@ -278,7 +289,7 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
       if (typeof window !== 'undefined') {
         log.debug('Clearing cached export data')
         // Clear any cached export data
-        chrome.storage.local.remove([
+        window.electron.storage.remove([
           'export-progress',
           'export-selections',
           'export-field-mappings'
@@ -298,7 +309,7 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
 
       log.info(`Tenant switch completed successfully to ${tenantSlug}`)
     } catch (error) {
-      log.error(`Failed to switch tenant from ${currentTenant?.slug || 'none'} to ${tenantSlug}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      log.error(`Failed to switch tenant from ${currentTenant?.slug ?? 'none'} to ${tenantSlug}: ${error instanceof Error ? error.message : 'Unknown error'}`)
       // Error is already handled by the store
     }
   }, [switchTenantAction, fetchAllTenantStatuses, currentTenant?.slug, queryClient])

@@ -86,7 +86,7 @@ export function useCurrentUser() {
           userId: session.user?.id,
           userEmail: session.user?.email ? `${session.user.email.substring(0, 3)}***` : undefined,
           role: session.user?.role,
-          permissionCount: session.user?.permissions.length || 0
+          permissionCount: session.user?.permissions.length ?? 0
         })
         
         return session.user
@@ -129,7 +129,7 @@ export function useAuthenticate() {
       log.debug('Starting authentication process', { 
         hasApiKey: !!apiKey,
         tenantSlug,
-        apiKeyLength: apiKey.length || 0
+        apiKeyLength: apiKey.length ?? 0
       })
       
       try {
@@ -176,7 +176,7 @@ export function useAuthenticate() {
       queryClient.setQueryData([...queryKeys.auth, 'validity'], true)
 
       // Invalidate related queries
-      queryClient.invalidateQueries({ queryKey: queryKeys.tenants })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.tenants })
     },
     onError: (error: AuthError) => {
       log.warn('Authentication error - clearing cache and updating store', {
@@ -294,7 +294,7 @@ export function useRefreshSession() {
 
       // Update query cache
       queryClient.setQueryData(queryKeys.session(), session)
-      queryClient.invalidateQueries({ queryKey: queryKeys.auth })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.auth })
     },
     onError: (error: AuthError) => {
       log.warn('Session refresh error - clearing session data', {
@@ -323,10 +323,10 @@ export function useSwitchTenant() {
       setTenant(newTenantContext)
 
       // Invalidate tenant-specific queries
-      queryClient.invalidateQueries({ queryKey: queryKeys.tenants })
-      queryClient.invalidateQueries({ queryKey: queryKeys.companies })
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues })
-      queryClient.invalidateQueries({ queryKey: queryKeys.workflows })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.tenants })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.companies })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issues })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workflows })
     },
     meta: {
       successMessage: 'Switched tenant successfully'
@@ -376,15 +376,15 @@ export function useAuthStatus() {
   const validityQuery = useSessionValidity()
 
   return {
-    isAuthenticated: sessionQuery.data?.isAuthenticated || false,
+    isAuthenticated: sessionQuery.data?.isAuthenticated ?? false,
     isLoading: sessionQuery.isLoading || validityQuery.isLoading,
-    isValid: sessionQuery.data?.isValid || false,
+    isValid: sessionQuery.data?.isValid ?? false,
     hasError: sessionQuery.isError || validityQuery.isError,
-    error: sessionQuery.error || validityQuery.error,
+    error: sessionQuery.error ?? validityQuery.error,
     session: sessionQuery.data,
     refetch: () => {
-      sessionQuery.refetch()
-      validityQuery.refetch()
+      void sessionQuery.refetch()
+      void validityQuery.refetch()
     }
   }
 }
@@ -393,13 +393,13 @@ export function useUserPermissions() {
   const userQuery = useCurrentUser()
 
   return {
-    permissions: userQuery.data?.permissions || [],
+    permissions: userQuery.data?.permissions ?? [],
     roles: userQuery.data?.role ? [userQuery.data.role] : [], // Convert single role to array
     hasPermission: (permission: string) => {
-      return userQuery.data?.permissions.includes(permission) || false
+      return userQuery.data?.permissions.includes(permission) ?? false
     },
     hasRole: (role: string) => {
-      return userQuery.data?.role === role || false // Check single role
+      return (userQuery.data?.role === role) ?? false // Check single role
     },
     isLoading: userQuery.isLoading
   }

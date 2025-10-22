@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Workflow } from '../../../types'
 
-vi.mock('../client/http-client', () => ({
+vi.mock('../../client/http-client', () => ({
   getHttpClient: vi.fn()
 }))
 
@@ -15,13 +15,13 @@ const mockClient = {
 }
 
 const { workflowsService } = await import('../workflows.service')
-const { getHttpClient } = await import('../client/http-client')
+const { getHttpClient } = await import('../../client/http-client')
 const { ensureTenantSlug } = await import('../tenant.service')
 
 describe('workflowsService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(getHttpClient).mockReturnValue(mockClient)
+    vi.mocked(getHttpClient).mockReturnValue(mockClient as any)
     mockClient.getWorkflowTemplates.mockResolvedValue([])
   })
 

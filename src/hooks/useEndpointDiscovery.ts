@@ -56,7 +56,7 @@ export function useEndpointDiscovery() {
   const loadData = useCallback(async () => {
     try {
       setIsLoading(true)
-      const result = await chrome.storage.local.get([DISCOVERY_STORAGE_KEY, CONFIG_STORAGE_KEY])
+      const result = await window.electron.storage.get([DISCOVERY_STORAGE_KEY, CONFIG_STORAGE_KEY])
 
       const storedEndpoints: DiscoveredEndpoint[] = result[DISCOVERY_STORAGE_KEY] ?? []
       const storedConfig: EndpointDiscoveryConfig = { ...DEFAULT_CONFIG, ...result[CONFIG_STORAGE_KEY] }
@@ -94,7 +94,7 @@ export function useEndpointDiscovery() {
         .sort((a, b) => b.lastUsed - a.lastUsed)
         .slice(0, config.maxEndpoints)
 
-      await chrome.storage.local.set({ [DISCOVERY_STORAGE_KEY]: limitedEndpoints })
+      await window.electron.storage.set({ [DISCOVERY_STORAGE_KEY]: limitedEndpoints })
 
       log.debug('Endpoints saved to storage', {
         count: limitedEndpoints.length
@@ -109,7 +109,7 @@ export function useEndpointDiscovery() {
   // Save config to Chrome storage
   const saveConfig = useCallback(async (newConfig: EndpointDiscoveryConfig) => {
     try {
-      await chrome.storage.local.set({ [CONFIG_STORAGE_KEY]: newConfig })
+      await window.electron.storage.set({ [CONFIG_STORAGE_KEY]: newConfig })
       setConfig(newConfig)
 
       log.debug('Configuration saved', newConfig)
@@ -303,7 +303,7 @@ export function useEndpointDiscovery() {
   // Clear all endpoints
   const clearEndpoints = useCallback(async () => {
     try {
-      await chrome.storage.local.remove([DISCOVERY_STORAGE_KEY])
+      await window.electron.storage.remove([DISCOVERY_STORAGE_KEY])
       setEndpoints([])
       setPatterns([])
 

@@ -418,7 +418,7 @@ export const useAppStore = create<AppStore>()(
           
           set({ 
             globalLoading: loading,
-            loadingMessage: loading ? message || null : null
+            loadingMessage: loading ? message ?? null : null
           })
         },
 
@@ -532,15 +532,15 @@ export const useAppStore = create<AppStore>()(
           getItem: async (name: string) => {
             try {
               const result = await storageManager.safeGet([name])
-              return result[name] || null
+              return result[name] ?? null
             } catch (error) {
               logger.extension.warn('App store get failed, falling back to direct storage', {
                 key: name,
                 error: error instanceof Error ? error.message : 'Unknown error'
               })
-              // Fallback to direct storage if safe storage fails
-              const fallbackResult = await chrome.storage.local.get([name])
-              return fallbackResult[name] || null
+              // Fallback to direct Electron storage if safe storage fails
+              const fallbackResult = await window.electron.storage.get([name])
+              return fallbackResult[name] ?? null
             }
           },
           setItem: async (name: string, value: string) => {
@@ -555,12 +555,12 @@ export const useAppStore = create<AppStore>()(
                 valueSize: new Blob([value]).size,
                 error: error instanceof Error ? error.message : 'Unknown error'
               })
-              
+
               // For critical app state, we still want to try direct storage
               // but only for essential data
               if (name.includes('app-store') && value.length < 10000) {
                 logger.extension.warn('Attempting fallback storage for critical app state')
-                await chrome.storage.local.set({ [name]: value })
+                await window.electron.storage.set({ [name]: value })
               } else {
                 throw error
               }
@@ -575,7 +575,7 @@ export const useAppStore = create<AppStore>()(
                 error: error instanceof Error ? error.message : 'Unknown error'
               })
               // Fallback for remove operations
-              await chrome.storage.local.remove([name])
+              await window.electron.storage.remove([name])
             }
           }
         })),

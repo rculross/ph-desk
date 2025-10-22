@@ -137,11 +137,11 @@ describe('DataTable Memory Leak Detection', () => {
     const addedEvents = eventListenerSpy.mock.calls.map((call: any) => call[0])
     const removedEvents = removeEventListenerSpy.mock.calls.map((call: any) => call[0])
 
-    const scrollEvents = addedEvents.filter(event => event === 'scroll')
-    const removedScrollEvents = removedEvents.filter(event => event === 'scroll')
+    const scrollEvents = addedEvents.filter((event: string) => event === 'scroll')
+    const removedScrollEvents = removedEvents.filter((event: string) => event === 'scroll')
 
-    const resizeEvents = addedEvents.filter(event => event === 'resize')
-    const removedResizeEvents = removedEvents.filter(event => event === 'resize')
+    const resizeEvents = addedEvents.filter((event: string) => event === 'resize')
+    const removedResizeEvents = removedEvents.filter((event: string) => event === 'resize')
 
     // Each added scroll/resize listener should have corresponding removal
     expect(removedScrollEvents.length).toBe(scrollEvents.length)

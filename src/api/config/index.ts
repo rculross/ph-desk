@@ -328,7 +328,7 @@ export const entityCacheConfig = {
  * Get entity-specific cache configuration
  */
 export function getEntityCacheConfig(entityType: keyof typeof entityCacheConfig) {
-  return entityCacheConfig[entityType] || {
+  return entityCacheConfig[entityType] ?? {
     staleTime: apiConfig.cache.defaultStaleTime
   }
 }

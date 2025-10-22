@@ -145,11 +145,11 @@ class SalesforceIntegrationService {
             processingTime,
             hasData: !!responseData,
             tenantSlug,
-            configVersion: responseData.key || 'unknown'
+            configVersion: responseData.key ?? 'unknown'
           }))
 
           return {
-            data: responseData || null,
+            data: responseData ?? null,
             metadata: {
               requestId,
               timestamp: Date.now(),
@@ -352,7 +352,7 @@ class SalesforceIntegrationService {
       'SYNC_ERROR': ['Check integration status', 'Retry synchronization']
     }
 
-    return recoveryMap[code] || ['Contact support for assistance']
+    return recoveryMap[code] ?? ['Contact support for assistance']
   }
 
   /**
@@ -373,7 +373,7 @@ class SalesforceIntegrationService {
       'SYNC_ERROR': 'high'
     }
 
-    return severityMap[code] || 'medium'
+    return severityMap[code] ?? 'medium'
   }
 
 }

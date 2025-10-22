@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
 
-import { QueryClientProvider } from '@tanstack/react-query'
 import { ConfigProvider } from 'antd'
 import { clsx } from 'clsx'
 import {
@@ -14,18 +13,19 @@ import {
   ServerIcon,
   BrainIcon,
   LinkIcon,
-  NetworkIcon
+  NetworkIcon,
+  HomeIcon
 } from 'lucide-react'
 import { Toaster } from 'react-hot-toast'
 
-import { APP_VERSION } from '@/config/version'
-import { queryClient } from '@/api/query-client'
+import { useCurrentUser } from '@/api/queries/auth.queries'
 import { LLMSettings } from '@/components/llm/LLMSettings'
 import { LogSettings } from '@/components/settings/LogSettings'
-import { TenantSelector } from '@/components/TenantSelector'
+import { APP_VERSION } from '@/config/version'
 import { useExtendedSettings } from '@/hooks/useExtendedSettings'
-import { fieldDetectionService } from '@/services/field-detection.service'
 import { authService } from '@/services/auth.service'
+import { fieldDetectionService } from '@/services/field-detection.service'
+import { useActiveTenant } from '@/stores/tenant.store'
 import type { ExtendedUserSettings } from '@/types/settings'
 import { logger } from '@/utils/logger'
 
@@ -37,6 +37,7 @@ import { IssueExporter } from './components/IssueExporter'
 import { LLMIntegration } from './components/LLMIntegration'
 import { LoginPrompt } from './components/LoginPrompt'
 import { LogzExplorer } from './components/LogzExplorer'
+// Preferences component removed - now using native electron-preferences dialog (File -> Preferences)
 import { SalesforceIntegration } from './components/SalesforceIntegration'
 import { WorkflowTemplateExporter } from './components/WorkflowExporter'
 
@@ -145,6 +146,13 @@ export const App: React.FC = () => {
   // Move useExtendedSettings hook here to avoid conditional Hook calls
   const extendedSettings = useExtendedSettings()
 
+  // Get current tenant from store
+  const currentTenant = useActiveTenant()
+
+  // Check connection status via user profile query
+  const currentUserQuery = useCurrentUser()
+  const isConnected = currentUserQuery.isSuccess && !!currentUserQuery.data
+
   const log = logger.content // Using content logger for extension page
 
   // Check authentication status on mount
@@ -201,11 +209,18 @@ export const App: React.FC = () => {
   useEffect(() => {
     log.info(`Extension page application initialized - version ${APP_VERSION}`)
     log.debug('Shared query client connected for extension page')
-    
+
     return () => {
       log.debug('Extension page application unmounted')
     }
   }, [log])
+
+  // Set window title with version (Electron only)
+  useEffect(() => {
+    if (window.electron?.window?.setTitle) {
+      window.electron.window.setTitle(`Planhat Tools ${APP_VERSION}`)
+    }
+  }, []) // Run once on mount, will update when APP_VERSION changes via hot reload
 
   // Log tab changes
   useEffect(() => {
@@ -220,11 +235,11 @@ export const App: React.FC = () => {
 
   // Enhanced dropdown handler with logging
   const handleDropdownToggle = (category: string, isOpen: boolean) => {
-    // log.debug(`Navigation dropdown toggled: ${category} ${isOpen ? 'opened' : 'closed'}`) // Removed verbose logging
     setOpenDropdown(isOpen ? category : null)
   }
 
-  const renderContent = () => {
+
+  const renderContent = (): React.ReactElement => {
     log.debug(`Rendering content for active tab: ${activeTab}`)
 
     switch (activeTab) {
@@ -247,31 +262,17 @@ export const App: React.FC = () => {
       case 'settings':
         return <SettingsPanel extendedSettings={extendedSettings} />
       case 'home':
+        return <Dashboard onNavigate={handleTabChange} />
       default:
         return <Dashboard onNavigate={handleTabChange} />
     }
   }
 
-  // Show loading state while checking auth
-  if (isCheckingAuth) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-500 border-t-transparent mx-auto mb-4" />
-          <p className="text-gray-600">Checking authentication...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Show login prompt if not authenticated
-  if (!isAuthenticated) {
-    return <LoginPrompt onLoginSuccess={handleLoginSuccess} />
-  }
+  // Don't block the UI - let the dashboard show and handle login there
+  // User can login from the dashboard with prod/demo buttons
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <ConfigProvider
+    <ConfigProvider
         theme={{
           components: {
             Button: {
@@ -294,15 +295,29 @@ export const App: React.FC = () => {
           <header className='sticky top-0 z-40 border-b border-gray-200 bg-white'>
           <div className='px-4 sm:px-6 lg:px-8'>
             <div className='flex h-12 items-center justify-between'>
-              <div className='flex items-center gap-4'>
-                <div className='flex h-8 w-8 items-center justify-center rounded-lg bg-planhat-blue'>
-                  <span className='text-base font-bold text-white'>P</span>
+              <div className='flex items-center'>
+                {/* Planhat Tools Branding */}
+                <div className='flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50/40 mr-8'>
+                  <button
+                    onClick={() => handleTabChange('home', 'home-icon')}
+                    className={clsx(
+                      'flex items-center justify-center p-1 rounded-md transition-colors',
+                      activeTab === 'home'
+                        ? 'text-planhat-blue bg-blue-100/40'
+                        : 'text-planhat-blue hover:bg-blue-100/40'
+                    )}
+                    title='Return to home (prod/demo selection)'
+                  >
+                    <HomeIcon className='h-4 w-4' />
+                  </button>
+                  <span className='text-sm font-semibold text-planhat-blue'>Planhat Tools</span>
                 </div>
-                <h1 className='text-lg font-bold text-gray-900'>Planhat Tools</h1>
-                <span className='text-sm text-gray-500'>v{APP_VERSION}</span>
 
-                {/* Navigation dropdowns moved to header */}
-                <div className='flex items-center space-x-4 ml-8'>
+                {/* Divider */}
+                <div className='h-6 w-px bg-gray-300 mr-8' />
+
+                {/* Navigation dropdowns */}
+                <div className='flex items-center space-x-4'>
                   {navigationCategories.map(category => {
                     const CategoryIcon = category.icon
                     const hasItems = category.items.length > 0
@@ -315,7 +330,7 @@ export const App: React.FC = () => {
                         onMouseEnter={() => hasItems && handleDropdownToggle(category.label, true)}
                         onMouseLeave={(e) => {
                           const relatedTarget = e.relatedTarget as HTMLElement | null
-                          if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
+                          if (!relatedTarget || !(relatedTarget instanceof Node) || !e.currentTarget.contains(relatedTarget)) {
                             handleDropdownToggle(category.label, false)
                           }
                         }}
@@ -380,11 +395,20 @@ export const App: React.FC = () => {
                   Settings
                 </button>
 
-                <TenantSelector
-                  size="sm"
-                  showLogo={true}
-                  className="min-w-0"
-                />
+                {/* Tenant Display */}
+                {currentTenant ? (
+                  <span
+                    className={clsx(
+                      'text-sm font-semibold',
+                      isConnected ? 'text-green-900' : 'text-red-600'
+                    )}
+                    title={isConnected ? 'Connected to tenant' : 'Not connected to tenant'}
+                  >
+                    {currentTenant.slug}
+                  </span>
+                ) : (
+                  <span className='text-sm text-gray-500 italic'>No tenant selected</span>
+                )}
               </div>
             </div>
           </div>
@@ -425,8 +449,7 @@ export const App: React.FC = () => {
           }}
         />
         </div>
-      </ConfigProvider>
-    </QueryClientProvider>
+    </ConfigProvider>
   )
 }
 
@@ -459,6 +482,8 @@ function _LandingPage() {
  */
 function Dashboard({ onNavigate: _onNavigate }: { onNavigate: (tab: NavItem) => void }) {
   const log = logger.content
+  const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [loginError, setLoginError] = useState<string | null>(null)
 
   useEffect(() => {
     log.debug('Dashboard component mounted')
@@ -467,19 +492,101 @@ function Dashboard({ onNavigate: _onNavigate }: { onNavigate: (tab: NavItem) => 
     }
   }, [log])
 
+  const handleEnvironmentLogin = async (environment: 'production' | 'demo') => {
+    setIsLoggingIn(true)
+    setLoginError(null)
+
+    try {
+      log.info(`[Dashboard] Initiating ${environment} login...`)
+      const authResult = await authService.login(environment)
+
+      log.info(`[Dashboard] Login successful to ${environment}`, {
+        tenantSlug: authResult.tenantSlug
+      })
+
+      // The tenant slug was captured from OAuth redirect
+      // The tenant store will auto-initialize with this tenant
+      // Force reload to trigger App's authentication check
+      window.location.reload()
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Login failed'
+
+      if (errorMessage.includes('cancelled')) {
+        log.info('[Dashboard] Login cancelled by user')
+        setLoginError('Login cancelled. Please try again.')
+      } else {
+        log.error('[Dashboard] Login error', { error })
+        setLoginError(errorMessage)
+      }
+      setIsLoggingIn(false)
+    }
+  }
+
   return (
-    <div className='flex flex-col items-center justify-center min-h-[60vh] space-y-6'>
+    <div className='flex flex-col items-center justify-center min-h-[60vh] space-y-8'>
       <div className='flex h-24 w-24 items-center justify-center rounded-full bg-planhat-blue shadow-lg'>
         <span className='text-3xl font-bold text-white'>P</span>
       </div>
+
       <div className='text-center space-y-2'>
         <h1 className='text-3xl font-bold text-gray-900'>Welcome to Planhat Tools</h1>
-        <p className='text-lg text-gray-600 max-w-md'>
-          Advanced data export and automation tools for the Planhat platform
-        </p>
       </div>
-      <div className='text-center text-sm text-gray-500'>
-        Use the navigation above to access export tools and features
+
+      {/* Environment Login Buttons */}
+      <div className='flex flex-col items-center space-y-4 w-full max-w-sm'>
+        <p className='text-sm text-gray-600 font-medium'>Select an environment to get started:</p>
+
+        <div className='grid grid-cols-2 gap-4 w-full'>
+          <button
+            onClick={() => handleEnvironmentLogin('production')}
+            disabled={isLoggingIn}
+            className='
+              px-6 py-4 rounded-lg border-2 border-blue-500 bg-blue-50
+              hover:bg-blue-100 active:bg-blue-200
+              text-blue-700 font-semibold
+              transition-all duration-200
+              disabled:opacity-50 disabled:cursor-not-allowed
+              flex flex-col items-center gap-2
+            '
+          >
+            <span className='text-base'>Production</span>
+            <span className='text-xs text-blue-600'>ws.planhat.com</span>
+          </button>
+
+          <button
+            onClick={() => handleEnvironmentLogin('demo')}
+            disabled={isLoggingIn}
+            className='
+              px-6 py-4 rounded-lg border-2 border-purple-500 bg-purple-50
+              hover:bg-purple-100 active:bg-purple-200
+              text-purple-700 font-semibold
+              transition-all duration-200
+              disabled:opacity-50 disabled:cursor-not-allowed
+              flex flex-col items-center gap-2
+            '
+          >
+            <span className='text-base'>Demo</span>
+            <span className='text-xs text-purple-600'>ws.planhatdemo.com</span>
+          </button>
+        </div>
+
+        {isLoggingIn && (
+          <div className='flex items-center gap-2 text-sm text-gray-600'>
+            <div className='h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent' />
+            <span>Opening login window...</span>
+          </div>
+        )}
+
+        {loginError && (
+          <div className='w-full bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700'>
+            {loginError}
+          </div>
+        )}
+      </div>
+
+      <div className='text-center text-sm text-gray-500 max-w-md'>
+        <p>A secure login window will open where you can sign in with your Planhat account.</p>
+        <p className='text-xs mt-2'>Your credentials are never stored locally.</p>
       </div>
     </div>
   )
@@ -555,9 +662,9 @@ function SettingsPanel({
   return (
     <div className='max-w-4xl space-y-8'>
       <div>
-        <h2 className='mb-2 text-2xl font-bold text-gray-900'>Settings</h2>
+        <h2 className='mb-2 text-2xl font-bold text-gray-900'>App Settings</h2>
         <p className='text-gray-600'>
-          Configure your extension preferences and options. Changes are saved automatically.
+          Configure app-specific settings. For general preferences, use <strong>File → Preferences</strong> (Cmd+,). Changes are saved automatically.
         </p>
       </div>
 
@@ -575,88 +682,7 @@ function SettingsPanel({
         </div>
       )}
 
-      <div className='grid grid-cols-1 gap-6 lg:grid-cols-3'>
-        {/* Export Settings */}
-        <div className='rounded-lg border bg-white p-6 shadow-sm'>
-          <h3 className='mb-4 text-lg font-semibold'>Export Settings</h3>
-          <div className='space-y-4'>
-            <label className='flex items-center justify-between'>
-              <span className='text-sm font-medium'>Default export format</span>
-              <select 
-                value={settings.export.defaultFormat}
-                onChange={(e) => handleSettingUpdate('export', 'defaultFormat', e.target.value as 'csv' | 'xlsx' | 'json', 'Default Export Format')}
-                className='rounded border border-gray-300 px-3 py-1 text-sm'
-                disabled={saving}
-              >
-                <option value='csv'>CSV</option>
-                <option value='xlsx'>Excel</option>
-                <option value='json'>JSON</option>
-              </select>
-            </label>
-
-            <label className='flex items-center justify-between'>
-              <span className='text-sm font-medium'>Include headers by default</span>
-              <input
-                type='checkbox'
-                checked={settings.export.includeHeaders}
-                onChange={(e) => handleSettingUpdate('export', 'includeHeaders', e.target.checked, 'Include Headers by Default')}
-                className='rounded border-gray-300 text-planhat-blue focus:ring-planhat-blue'
-                disabled={saving}
-              />
-            </label>
-
-            <label className='flex items-center justify-between'>
-              <span className='text-sm font-medium'>Auto-download completed exports</span>
-              <input
-                type='checkbox'
-                checked={settings.export.autoDownload}
-                onChange={(e) => handleSettingUpdate('export', 'autoDownload', e.target.checked, 'Auto-download Completed Exports')}
-                className='rounded border-gray-300 text-planhat-blue focus:ring-planhat-blue'
-                disabled={saving}
-              />
-            </label>
-          </div>
-        </div>
-
-        {/* UI Enhancements */}
-        <div className='rounded-lg border bg-white p-6 shadow-sm'>
-          <h3 className='mb-4 text-lg font-semibold'>UI Enhancements</h3>
-          <div className='space-y-4'>
-            <label className='flex items-center justify-between'>
-              <span className='text-sm font-medium'>Enhanced Logs</span>
-              <input
-                type='checkbox'
-                checked={settings.ui.enhancedLogs}
-                onChange={(e) => handleSettingUpdate('ui', 'enhancedLogs', e.target.checked, 'Enhanced Logs')}
-                className='rounded border-gray-300 text-planhat-blue focus:ring-planhat-blue'
-                disabled={saving}
-              />
-            </label>
-
-            <label className='flex items-center justify-between'>
-              <span className='text-sm font-medium'>Wide Modal Dropdowns</span>
-              <input
-                type='checkbox'
-                checked={settings.ui.wideModalDropdowns}
-                onChange={(e) => handleSettingUpdate('ui', 'wideModalDropdowns', e.target.checked, 'Wide Modal Dropdowns')}
-                className='rounded border-gray-300 text-planhat-blue focus:ring-planhat-blue'
-                disabled={saving}
-              />
-            </label>
-
-            <label className='flex items-center justify-between'>
-              <span className='text-sm font-medium'>Diff Highlighting</span>
-              <input
-                type='checkbox'
-                checked={settings.ui.diffHighlighting}
-                onChange={(e) => handleSettingUpdate('ui', 'diffHighlighting', e.target.checked, 'Diff Highlighting')}
-                className='rounded border-gray-300 text-planhat-blue focus:ring-planhat-blue'
-                disabled={saving}
-              />
-            </label>
-          </div>
-        </div>
-
+      <div className='grid grid-cols-1 gap-6 lg:grid-cols-2'>
         {/* Logging Settings */}
         <div className='rounded-lg border bg-white p-6 shadow-sm'>
           <h3 className='mb-4 text-lg font-semibold'>Logging</h3>

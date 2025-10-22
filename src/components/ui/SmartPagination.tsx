@@ -76,7 +76,7 @@ export function SmartPagination({
       estimatedRemainingRequests,
       timeSavingsSeconds,
       recommendLargerBatch: efficiency < 75 && estimatedRemainingRequests > 3,
-      currentBatchLabel: batchSizes.find(b => b.value === currentBatch)?.label || `${currentBatch}`,
+      currentBatchLabel: batchSizes.find(b => b.value === currentBatch)?.label ?? `${currentBatch}`,
       avgRecordsPerRequest: Math.round(avgRecordsPerRequest)
     }
   }, [recordsPerPull, maxRecordsPerRequest, totalLoaded, currentOffset, hasMore, batchSizes])

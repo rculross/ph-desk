@@ -138,44 +138,8 @@ export const useTenantStore = create<TenantStore>()(
             })
           }
 
-          // Smart cache invalidation: Check if current browser tabs have different environments
-          // than what's in the cache. This helps detect when demo tenants become available.
-          let shouldInvalidateCache = false
+          // Check cache freshness (skip if force refresh requested)
           if (!forceRefresh && lastFetch && now - lastFetch < TENANTS_CACHE_DURATION) {
-            try {
-              // Check what environments are currently available in browser tabs
-              const tabTenants = await tenantService.scanChromeTabsForTenantsWithEnvironment()
-              const tabHasDemo = tabTenants.some(t => t.environment === 'demo')
-              const tabHasProd = tabTenants.some(t => t.environment === 'production')
-
-              // Check what environments are in cached data
-              const currentTenants = get().availableTenants
-              const cacheHasDemo = currentTenants.some(t => t.domain?.includes('planhatdemo.com'))
-              const cacheHasProd = currentTenants.some(t => !t.domain?.includes('planhatdemo.com'))
-
-              // Invalidate cache if there's a mismatch in available environments
-              // OR if demo tenants are available in tabs but cache has significantly fewer tenants
-              const tabTenantCount = tabTenants.length
-              const cacheTenantCount = currentTenants.length
-              const hasMismatch = (tabHasDemo && !cacheHasDemo) || (tabHasProd && !cacheHasProd)
-              const hasSignificantCountDifference = tabHasDemo && cacheTenantCount < 10 // Heuristic: if tabs show demo but cache has < 10 tenants, likely stale
-
-              if (hasMismatch || hasSignificantCountDifference) {
-                shouldInvalidateCache = true
-                if (hasMismatch) {
-                  logger.api.info(`Cache invalidated: Environment mismatch detected. Tabs: (${tabHasProd ? 'prod' : 'no-prod'}, ${tabHasDemo ? 'demo' : 'no-demo'}), Cache: (${cacheHasProd ? 'prod' : 'no-prod'}, ${cacheHasDemo ? 'demo' : 'no-demo'})`)
-                }
-                if (hasSignificantCountDifference) {
-                  logger.api.info(`Cache invalidated: Tenant count mismatch. Tabs: ${tabTenantCount} (demo: ${tabHasDemo}), Cache: ${cacheTenantCount} (demo: ${cacheHasDemo})`)
-                }
-              }
-            } catch (error) {
-              logger.api.warn('Failed to check tab environments for cache invalidation:', error)
-            }
-          }
-
-          // Check cache freshness (skip if force refresh requested or cache invalidated)
-          if (!forceRefresh && !shouldInvalidateCache && lastFetch && now - lastFetch < TENANTS_CACHE_DURATION) {
             const currentTenants = get().availableTenants
             const demoCount = currentTenants.filter(t => t.domain?.includes('planhatdemo.com')).length
             const prodCount = currentTenants.filter(t => !t.domain?.includes('planhatdemo.com')).length
@@ -256,26 +220,8 @@ export const useTenantStore = create<TenantStore>()(
               error: null
             })
 
-            // Notify other stores/components about tenant change using validated schema
-            // Don't use chrome.runtime inside the async function to avoid proxy issues
-            try {
-              const currentTenant = get().currentTenant
-              const previousTenantSlug = currentTenant?.slug
-              
-              // Create clean payload object to avoid prototype pollution
-              const payload: any = {
-                tenant: String(tenant.slug),
-                url: String(window.location.href)
-              }
-              if (previousTenantSlug) {
-                payload.previousTenant = String(previousTenantSlug)
-              }
-              
-              const message = createMessage('TENANT_CHANGED', payload)
-              await chrome.runtime.sendMessage(message)
-            } catch {
-              // Silently handle message failures
-            }
+            // Tenant change complete - no need to notify in desktop app
+            // The state change itself propagates through Zustand subscriptions
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to set current tenant'
 
@@ -288,28 +234,41 @@ export const useTenantStore = create<TenantStore>()(
         },
 
         switchTenant: async (tenantSlug: string) => {
+          // Normalize tenant slug to lowercase
+          const normalizedSlug = tenantSlug.toLowerCase()
           const currentTenantSlug = get().currentTenant?.slug
           logger.api.info('Switching tenant', {
             from: currentTenantSlug,
-            to: tenantSlug
+            to: normalizedSlug
           })
-          
+
           try {
             set({
               isSwitchingTenant: true,
               switchTenantError: null
             })
 
-            const tenant = await tenantService.switchTenant(tenantSlug)
+            const tenant = await tenantService.switchTenant(normalizedSlug)
 
-            // Store the selected tenant in Chrome storage for persistence
+            // Store the selected tenant in Electron storage for persistence
             try {
-              await chrome.storage.local.set({ 
-                'last-selected-tenant': tenantSlug 
+              await window.electron.storage.set({
+                'last-selected-tenant': normalizedSlug
               })
             } catch (storageError) {
               // Don't fail tenant switch if storage fails
               logger.api.warn('Failed to store last selected tenant:', storageError instanceof Error ? storageError.message : 'Unknown error')
+            }
+
+            // Save last production tenant to electron-store (main process) if this is a production tenant
+            const isProdTenant = !tenant.domain?.includes('planhatdemo.com')
+            if (isProdTenant) {
+              try {
+                logger.api.info(`Saving last production tenant: ${normalizedSlug}`)
+                await window.electron.auth.saveLastProdTenant(normalizedSlug)
+              } catch (error) {
+                logger.api.warn('Failed to save last production tenant:', error instanceof Error ? error.message : 'Unknown error')
+              }
             }
 
             // Single set() call to avoid proxy lifecycle issues
@@ -318,7 +277,7 @@ export const useTenantStore = create<TenantStore>()(
               tenantSettings: tenant.settings,
               tenantLimits: tenant.limits,
               isSwitchingTenant: false,
-              
+
               // Clear ALL state when switching tenants (important!)
               tenantUsage: null,
               tenantStatuses: [],
@@ -397,7 +356,7 @@ export const useTenantStore = create<TenantStore>()(
 
         getTenantStatus: (tenantSlug: string): TenantStatus | null => {
           const state = get()
-          return state.tenantStatuses.find(status => status.tenantSlug === tenantSlug) || null
+          return state.tenantStatuses.find(status => status.tenantSlug === tenantSlug) ?? null
         },
 
         getActiveTenants: (): TenantStatus[] => {
@@ -415,7 +374,7 @@ export const useTenantStore = create<TenantStore>()(
           try {
             // Extract state BEFORE any async operations
             const currentTenant = get().currentTenant
-            const id = tenantId || currentTenant?.id
+            const id = tenantId ?? currentTenant?.id
             if (!id) {
               logger.api.error('Cannot fetch tenant settings - no tenant ID provided')
               throw new Error('No tenant ID provided')
@@ -547,7 +506,7 @@ export const useTenantStore = create<TenantStore>()(
         // Feature checks
         hasFeature: (feature: string): boolean => {
           const state = get()
-          const hasFeature = state.currentTenant?.features.includes(feature) || false
+          const hasFeature = state.currentTenant?.features.includes(feature) ?? false
           
           logger.api.debug('Feature check', {
             feature,
@@ -560,7 +519,7 @@ export const useTenantStore = create<TenantStore>()(
 
         getTenantFeatures: (): string[] => {
           const state = get()
-          return state.currentTenant?.features || []
+          return state.currentTenant?.features ?? []
         },
 
         // Error handling and UI state
@@ -631,14 +590,14 @@ export const useTenantStore = create<TenantStore>()(
         name: 'tenant-store',
         storage: createJSONStorage(() => ({
           getItem: async (name: string) => {
-            const result = await chrome.storage.local.get([name])
-            return result[name] || null
+            const result = await window.electron.storage.get([name])
+            return result[name] ?? null
           },
           setItem: async (name: string, value: string) => {
-            await chrome.storage.local.set({ [name]: value })
+            await window.electron.storage.set({ [name]: value })
           },
           removeItem: async (name: string) => {
-            await chrome.storage.local.remove([name])
+            await window.electron.storage.remove([name])
           }
         })),
         partialize: state => ({
@@ -677,7 +636,7 @@ export const useActiveTenant = () => useTenantStore(state => state.currentTenant
 export const useAvailableTenants = () => useTenantStore(state => state.availableTenants)
 export const useTenantLoading = () =>
   useTenantStore(state => state.isLoading || state.tenantsLoading)
-export const useTenantError = () => useTenantStore(state => state.error || state.tenantsError)
+export const useTenantError = () => useTenantStore(state => state.error ?? state.tenantsError)
 export const useTenantFeatures = () => useTenantStore(state => state.getTenantFeatures())
 export const useTenantSettings = () => useTenantStore(state => state.tenantSettings)
 export const useTenantUsage = () => useTenantStore(state => state.tenantUsage)
@@ -726,87 +685,69 @@ const initializeTenantStore = async () => {
   isInitializing = true
 
   try {
-    // Check if we have a current tenant set
-    const currentTenant = await tenantService.getCurrentTenant()
+    // Step 1: Try to load last production tenant from electron-store (main process)
+    let lastProdTenantSlug: string | null = null
+    try {
+      const storedAuth = await window.electron.auth.getStoredAuth()
+      lastProdTenantSlug = storedAuth?.tenantSlug ?? null
 
-    if (currentTenant) {
-      useTenantStore.getState().setCurrentTenant(currentTenant)
-    } else {
-      // Tab-first initialization approach
-      logger.api.info('Tab-first initialization: Starting tenant discovery')
+      if (lastProdTenantSlug) {
+        logger.api.info(`Tenant store initialization: Found last production tenant: ${lastProdTenantSlug}`)
+      }
+    } catch (error) {
+      logger.api.debug('No stored auth data found:', error instanceof Error ? error.message : 'Unknown error')
+    }
 
-      // Step 1: Scan Chrome tabs to find accessible tenants
-      const tabTenants = await tenantService.scanChromeTabsForTenantsWithEnvironment()
-      logger.api.info(`Tab-first initialization: Found ${tabTenants.length} tenants in open tabs`)
-
-      // Step 2: Try to load the last selected tenant from Chrome storage
-      let targetTenantSlug: string | null = null
-
+    // Step 2: If we have a last production tenant, validate it using /myprofile
+    if (lastProdTenantSlug) {
       try {
-        const storage = await chrome.storage.local.get(['last-selected-tenant'])
-        targetTenantSlug = storage['last-selected-tenant']
-        logger.api.debug(`Tab-first initialization: Last selected tenant from storage: ${targetTenantSlug || 'none'}`)
-      } catch (storageError) {
-        logger.api.warn('Failed to load last selected tenant from storage:', storageError instanceof Error ? storageError.message : 'Unknown error')
-      }
+        logger.api.info(`Tenant store initialization: Validating access to ${lastProdTenantSlug}`)
 
-      // Step 3: Check if last selected tenant has an open tab
-      let selectedTenant: string | null = null
+        // Use tenantService to validate tenant access
+        const hasAccess = await tenantService.hasAccessToTenant(lastProdTenantSlug)
 
-      if (targetTenantSlug) {
-        const hasOpenTab = tabTenants.some(t => t.tenantSlug === targetTenantSlug)
-        if (hasOpenTab) {
-          selectedTenant = targetTenantSlug
-          logger.api.info(`Tab-first initialization: Last selected tenant '${targetTenantSlug}' has open tab - using it`)
+        if (hasAccess) {
+          logger.api.info(`Tenant store initialization: Verified access to ${lastProdTenantSlug}`)
+
+          // Fetch tenant list to get full tenant object
+          await useTenantStore.getState().fetchAvailableTenants(undefined, true)
+
+          // Switch to the validated tenant
+          const freshState = useTenantStore.getState()
+          const targetTenant = freshState.availableTenants.find(
+            t => t.slug === lastProdTenantSlug || t.tenantSlug === lastProdTenantSlug
+          )
+
+          if (targetTenant) {
+            await useTenantStore.getState().switchTenant(targetTenant.slug)
+            hasInitialized = true
+            return
+          } else {
+            logger.api.warn(`Tenant ${lastProdTenantSlug} not found in available tenants list`)
+          }
         } else {
-          logger.api.info(`Tab-first initialization: Last selected tenant '${targetTenantSlug}' has no open tab - checking fallback`)
+          logger.api.warn(`Tenant store initialization: No access to ${lastProdTenantSlug}`)
+          // Clear auth since tenant is no longer accessible
+          if ((window as any).authService) {
+            await (window as any).authService.handleUnauthorized()
+          }
         }
-      }
-
-      // Step 4: Fallback to 'planhat' if it has an open tab, or first available tab tenant
-      if (!selectedTenant) {
-        const planhatInTabs = tabTenants.find(t => t.tenantSlug === 'planhat')
-        if (planhatInTabs) {
-          selectedTenant = 'planhat'
-          logger.api.info('Tab-first initialization: Using \'planhat\' fallback (has open tab)')
-        } else if (tabTenants.length > 0 && tabTenants[0]) {
-          selectedTenant = tabTenants[0].tenantSlug
-          logger.api.info(`Tab-first initialization: Using first available tab tenant: ${selectedTenant}`)
-        } else {
-          selectedTenant = 'planhat' // Final fallback
-          logger.api.info('Tab-first initialization: No open tabs found, using \'planhat\' as final fallback')
+      } catch (error) {
+        logger.api.warn(`Failed to validate tenant ${lastProdTenantSlug}:`, error instanceof Error ? error.message : 'Unknown error')
+        // Clear auth on validation error
+        if ((window as any).authService) {
+          await (window as any).authService.handleUnauthorized()
         }
-      }
-
-      // Step 5: Fetch available tenants to get full tenant info
-      const storeInstance = useTenantStore.getState()
-      await storeInstance.fetchAvailableTenants(undefined, true) // Force refresh on initialization
-
-      // Step 6: Find and switch to the selected tenant
-      const freshState = useTenantStore.getState()
-      const availableTenants = freshState.availableTenants
-      const targetTenant = availableTenants.find(t => t.slug === selectedTenant || t.tenantSlug === selectedTenant)
-
-      if (targetTenant) {
-        logger.api.info(`Tab-first initialization: Switching to selected tenant: ${selectedTenant}`)
-        const freshStoreInstance = useTenantStore.getState()
-        await freshStoreInstance.switchTenant(targetTenant.slug)
-      } else {
-        logger.api.warn(`Tab-first initialization: Selected tenant '${selectedTenant}' not found in available tenants, trying URL detection`)
-        // Final fallback to URL detection
-        const freshStoreInstance = useTenantStore.getState()
-        await freshStoreInstance.detectTenantFromUrl()
       }
     }
+
+    // Step 3: If we get here, we don't have a valid tenant
+    // User needs to authenticate
+    logger.api.info('Tenant store initialization: No valid tenant found, user needs to login')
+
     hasInitialized = true
   } catch (error) {
     logger.api.error('Failed to initialize tenant store:', error instanceof Error ? error.message : 'Unknown error')
-    // Fallback: just fetch available tenants without setting a current one
-    try {
-      await useTenantStore.getState().fetchAvailableTenants(undefined, true) // Force refresh
-    } catch (fetchError) {
-      logger.api.error('Failed to fetch tenants during fallback initialization:', fetchError instanceof Error ? fetchError.message : 'Unknown error')
-    }
     hasInitialized = true // Mark as initialized even on error to prevent infinite retries
   } finally {
     isInitializing = false

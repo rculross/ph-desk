@@ -71,13 +71,36 @@ export interface AuthError {
  */
 export class AuthService {
   /**
-   * Check if user is logged in by testing API access
+   * Check if user is logged in
+   * For desktop app: checks Electron stored cookies
+   * For web/extension: tests API access
    */
   async isAuthenticated(): Promise<boolean> {
     const startTime = performance.now()
     log.debug('Starting authentication check')
 
     try {
+      // Desktop app: Check Electron stored auth to avoid unnecessary API calls
+      if (window.electron.auth) {
+        const storedAuth = await window.electron.auth.getStoredAuth()
+        const hasStoredAuth = storedAuth?.cookies && storedAuth.cookies.length > 0
+
+        if (!hasStoredAuth) {
+          const endTime = performance.now()
+          log.debug('No stored authentication found in Electron', {
+            duration: Math.round(endTime - startTime)
+          })
+          return false
+        }
+
+        const endTimeElectron = performance.now()
+        log.debug('Found stored authentication in Electron', {
+          duration: Math.round(endTimeElectron - startTime)
+        })
+        return true
+      }
+
+      // Fallback for non-desktop environments: check via API
       const client = getHttpClient()
       await client.get('/myprofile')
 
@@ -238,8 +261,8 @@ export class AuthService {
       
       const session: AuthSession = {
         id: 'browser-session',
-        userId: user?.id || '',
-        tenantId: tenantContext?.id || '',
+        userId: user?.id ?? '',
+        tenantId: tenantContext?.id ?? '',
         token: 'browser-session-token',
         expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 hours
         createdAt: Date.now(),
@@ -298,7 +321,7 @@ export class AuthService {
   /**
    * Clear session (simplified)
    */
-  async clearSession(): Promise<void> {
+  clearSession(): void {
     log.info('Clearing session')
     // In this simplified approach, we just log the action
     // The user will need to logout from the main Planhat application
@@ -307,7 +330,7 @@ export class AuthService {
   /**
    * Update session activity
    */
-  async updateSessionActivity(): Promise<void> {
+  updateSessionActivity(): void {
     log.debug('Session activity updated')
     // In this simplified approach, we don't need to do anything
     // Activity is tracked in the store
@@ -316,14 +339,14 @@ export class AuthService {
   /**
    * Switch tenant (not supported in simplified version)
    */
-  async switchTenant(tenantSlug: string): Promise<TenantContext> {
+  switchTenant(_tenantSlug: string): Promise<TenantContext> {
     throw new Error('Tenant switching not supported in this version')
   }
 
   /**
    * No logout needed - user can logout from the main Planhat app
    */
-  async logout(): Promise<void> {
+  logout(): void {
     log.info('Logout requested - user will need to logout from main Planhat application')
     // In this simplified approach, we don't need to do anything
     // The user will logout from the main Planhat application

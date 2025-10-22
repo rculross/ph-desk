@@ -178,9 +178,9 @@ const ProgressBar = React.forwardRef<HTMLDivElement, ProgressBarProps>(
 
     return (
       <div ref={ref} className={clsx('w-full', className)}>
-        {(showLabel || label) && (
+        {(showLabel ?? label) && (
           <div className='mb-1 flex justify-between text-sm'>
-            <span className='text-muted-foreground'>{label || 'Progress'}</span>
+            <span className='text-muted-foreground'>{label ?? 'Progress'}</span>
             <span className='text-muted-foreground'>{Math.round(percentage)}%</span>
           </div>
         )}
@@ -272,7 +272,7 @@ const LoadingOverlay = React.forwardRef<HTMLDivElement, LoadingOverlayProps>(
             )}
           >
             <div className='flex flex-col items-center gap-3'>
-              {spinner || <Spinner size='lg' />}
+              {spinner ?? <Spinner size='lg' />}
               {loadingText && (
                 <p className='text-sm font-medium text-muted-foreground'>{loadingText}</p>
               )}
@@ -486,8 +486,8 @@ const LoadingButtonContent = React.forwardRef<HTMLSpanElement, LoadingButtonCont
 
     return (
       <span ref={ref} className='flex items-center gap-2'>
-        {spinner || <Spinner size='sm' />}
-        {loadingText || children}
+        {spinner ?? <Spinner size='sm' />}
+        {loadingText ?? children}
       </span>
     )
   }

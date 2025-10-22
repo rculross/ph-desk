@@ -47,7 +47,7 @@ export function stripHtml(html: string | null | undefined): string {
       tempDiv.innerHTML = html
 
       // Extract text content, which automatically strips HTML tags
-      const plainText = tempDiv.textContent || tempDiv.innerText || ''
+      const plainText = (tempDiv.textContent || tempDiv.innerText) ?? ''
 
       // Clean up extra whitespace but preserve line breaks
       return plainText
@@ -170,7 +170,7 @@ export function sanitizeCSSPropertyName(id: string): string {
     // Remove consecutive hyphens/underscores
     .replace(/[-_]{2,}/g, '-')
     // Ensure it's not empty
-    || 'col-fallback'
+    ?? 'col-fallback'
 }
 
 /**
@@ -206,7 +206,7 @@ export const textFormatters = {
    * Plain text truncation formatter
    */
   plainText: (maxLength: number) => (value: unknown): string => {
-    const text = String(value || '')
+    const text = String(value ?? '')
     return truncateText(text, maxLength)
   }
 }

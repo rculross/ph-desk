@@ -23,6 +23,7 @@ import { sendRawRequest } from '../../api/request'
 import { fetchAllPages } from '../../api/utils/pagination'
 import { ExportFormatButtons } from '../../components/exporters'
 import { ToolHeader, ToolHeaderControls, ToolHeaderDivider, CompactInput } from '../../components/ui/ToolHeader'
+import { Table } from '../../components/ui/Table'
 // import { useExport } from '../../hooks/useExport'
 import { useEndpointHistory } from '../../hooks/useEndpointHistory'
 import { useFieldDetection } from '../../hooks/useFieldDetection'
@@ -58,6 +59,7 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
     EXPORT_FORMAT_OPTIONS.map(f => f.value)
   )
   const [isExporting, setIsExporting] = useState(false)
+  const [viewMode, setViewMode] = useState<'table' | 'json'>('json')
 
   // History management
   const { history, addToHistory, clearHistory } = useEndpointHistory()
@@ -120,7 +122,7 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
 
   // Get current tenant from store to watch for changes
   const activeTenant = useActiveTenant()
-  const tenantSlug = activeTenant?.slug || getTenantSlug()
+  const tenantSlug = activeTenant?.slug ?? getTenantSlug()
 
 
   // Field detection for export
@@ -139,13 +141,10 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
     })
   }, [log, tenantSlug, variant])
 
-  // Clear response data when switching from GET to POST/PUT
+  // Track mode changes for logging
   useEffect(() => {
-    if (previousMode === 'GET' && (mode === 'POST' || mode === 'PUT')) {
-      setResponseData(null)
-    }
     setPreviousMode(mode)
-  }, [mode, previousMode])
+  }, [mode])
 
   // Clear response data when tenant changes
   useEffect(() => {
@@ -195,7 +194,7 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
 
     try {
       const isDataModel = isDataModelEndpoint(endpoint.trim())
-      const maxRecs = parseInt(maxRecords || '100') || 100
+      const maxRecs = parseInt(maxRecords ?? '100') ?? 100
 
       log.info('Executing flex export request', {
         endpoint: endpoint.trim(),
@@ -250,8 +249,8 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
             limit: 2000, // Planhat's max limit per request
             maxRecords: maxRecs,
             onProgress: (loaded, total) => {
-              setProgress({ loaded, total: total || maxRecs })
-              log.debug('Pagination progress', { loaded, total: total || maxRecs })
+              setProgress({ loaded, total: total ?? maxRecs })
+              log.debug('Pagination progress', { loaded, total: total ?? maxRecs })
             }
           })
 
@@ -301,9 +300,22 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
       }
 
       setResponseData(result)
-      setJsonContent(JSON.stringify(result, null, 2))
 
+      // For large datasets, only stringify a preview to avoid hanging the browser
       const recordCount = Array.isArray(result) ? result.length : 1
+      const isLargeDataset = recordCount > 100
+
+      if (isLargeDataset) {
+        // Show summary and preview for large datasets
+        const preview = Array.isArray(result) ? result.slice(0, 10) : result
+        const previewJson = JSON.stringify(preview, null, 2)
+        const summary = `// Large dataset: ${recordCount} records\n// Showing first 10 records as preview\n// Use Export buttons to download full dataset\n\n${previewJson}`
+        setJsonContent(summary)
+        setViewMode('table') // Auto-switch to table view for large datasets
+      } else {
+        setJsonContent(JSON.stringify(result, null, 2))
+        setViewMode('json')
+      }
       const successMessage = progress
         ? `${requestMode} request successful - fetched ${recordCount} records in ${Math.ceil(recordCount / 2000)} chunks`
         : `${requestMode} request successful`
@@ -520,7 +532,7 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
           >
             {isLoading
               ? progress
-                ? `Fetching... ${progress.loaded}/${progress.total || '?'}`
+                ? `Fetching... ${progress.loaded}/${progress.total ?? '?'}`
                 : 'Executing...'
               : 'Execute'}
           </Button>
@@ -564,29 +576,47 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
         </>
       )}
 
-      {/* Request Body for POST/PUT Mode */}
-      {!isMinimal && (mode === 'POST' || mode === 'PUT') && (
-        <div className='space-y-2'>
-          <label className='block text-sm font-medium text-gray-700' htmlFor='flex-export-request-body'>
-            Request Body (JSON)
-          </label>
-          <Input.TextArea
-            id='flex-export-request-body'
-            placeholder='{"key": "value"}'
-            value={jsonContent}
-            onChange={(e) => setJsonContent(e.target.value)}
-            rows={6}
-            className='font-mono text-sm'
+
+
+      {/* Table View for Large Datasets */}
+      {!isMinimal && responseData && Array.isArray(responseData) && responseData.length > 100 && viewMode === 'table' && (
+        <div className='space-y-4'>
+          <div className='flex items-center justify-between'>
+            <div className='flex items-center gap-2'>
+              <h3 className='text-lg font-medium text-gray-900'>Response Data</h3>
+              <div className='text-sm text-gray-600'>
+                ({responseData.length} records)
+              </div>
+            </div>
+            <Radio.Group
+              value={viewMode}
+              onChange={(e) => setViewMode(e.target.value)}
+              size="small"
+              optionType="button"
+              buttonStyle="solid"
+            >
+              <Radio.Button value="table">Table View</Radio.Button>
+              <Radio.Button value="json">JSON Preview</Radio.Button>
+            </Radio.Group>
+          </div>
+
+          <Table
+            data={responseData}
+            columns={[]}
+            entityType="custom"
+            tenantSlug={tenantSlug ?? undefined}
+            enablePersistence={false}
+            enableVirtualization={true}
+            enableColumnResizing={true}
+            enableSorting={true}
+            enableFilters={true}
+            enableGlobalSearch={true}
           />
-          <p className='text-xs text-gray-500'>Enter JSON data to send with the {mode} request</p>
         </div>
       )}
 
-
-
-
       {/* JSON Response Display */}
-      {(jsonContent || error) && (
+      {(jsonContent || error) && (viewMode === 'json' || !responseData || !Array.isArray(responseData) || responseData.length <= 100) && (
         <div className='space-y-4'>
           <div className='flex items-center justify-between'>
             <div className='flex items-center gap-2'>
@@ -597,7 +627,24 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
                   <span className='text-sm font-medium'>Request failed</span>
                 </div>
               )}
+              {!error && responseData && Array.isArray(responseData) && responseData.length > 100 && (
+                <div className='text-sm text-gray-600'>
+                  ({responseData.length} records - showing preview)
+                </div>
+              )}
             </div>
+            {!error && !isMinimal && responseData && Array.isArray(responseData) && responseData.length > 100 && (
+              <Radio.Group
+                value={viewMode}
+                onChange={(e) => setViewMode(e.target.value)}
+                size="small"
+                optionType="button"
+                buttonStyle="solid"
+              >
+                <Radio.Button value="table">Table View</Radio.Button>
+                <Radio.Button value="json">JSON Preview</Radio.Button>
+              </Radio.Group>
+            )}
           </div>
 
           <Input.TextArea
@@ -611,7 +658,7 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
             {error
               ? 'Error response from server'
               : !isMinimal && (mode === 'POST' || mode === 'PUT')
-              ? 'Edit the JSON and execute to send modified data'
+              ? `${mode} request body (editable) - Response will update here after execution`
               : 'Response data (read-only in GET mode)'}
           </p>
 

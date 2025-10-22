@@ -53,8 +53,12 @@ const dateRangeFilter: FilterFn<any> = (row, columnId, value) => {
     return false
   }
 
-  // Convert cell value to date
-  const cellDate = new Date(cellValue)
+  // Convert cell value to date - ensure it's a valid date input type
+  const cellValueAsDate = typeof cellValue === 'string' || typeof cellValue === 'number' || cellValue instanceof Date
+    ? cellValue
+    : String(cellValue)
+
+  const cellDate = new Date(cellValueAsDate)
   const start = new Date(startDate)
   const end = new Date(endDate)
 
@@ -71,25 +75,10 @@ export { dateRangeFilter }
 /**
  * Get appropriate TanStack filter function based on field type
  */
-function getFilterFunctionForFieldType(fieldType: string, fieldKey: string): FilterFn<any> | string | undefined {
+function getFilterFunctionForFieldType(fieldType: string, fieldKey: string): FilterFn<any> | undefined {
   // Date fields use custom date range filtering
   if (fieldType === 'date' || fieldKey.includes('date') || fieldKey.includes('time') || fieldKey === 'createdAt' || fieldKey === 'updatedAt') {
     return dateRangeFilter
-  }
-
-  // Number fields use range filtering
-  if (fieldType === 'number' || fieldType === 'integer') {
-    return 'inNumberRange'
-  }
-
-  // Array/list fields and enum fields use array includes
-  if (fieldType === 'array' || fieldType === 'enum' || fieldKey === 'status' || fieldKey === 'type' || fieldKey === 'model' || fieldKey === 'operation') {
-    return 'arrIncludes'
-  }
-
-  // Text fields use case-insensitive string includes
-  if (fieldType === 'string' || fieldType === 'text') {
-    return 'includesString'
   }
 
   // For everything else, let TanStack use default filtering
@@ -235,8 +224,8 @@ function createAccessor<TData>(fieldKey: string, isCustomField: boolean): Access
     // Special case for concatenated name field
     return (row: TData) => {
       const user = row as any
-      const firstName = user.firstName || ''
-      const lastName = user.lastName || ''
+      const firstName = user.firstName ?? ''
+      const lastName = user.lastName ?? ''
       return `${lastName}, ${firstName}`.replace(/^,\s*|,\s*$/g, '')
     }
   } else if (fieldKey === 'msCalendarApi.calendarToSave') {
@@ -245,13 +234,13 @@ function createAccessor<TData>(fieldKey: string, isCustomField: boolean): Access
       const user = row as any
       const calendarToSave = user.msCalendarApi?.calendarToSave
       if (!calendarToSave || typeof calendarToSave !== 'object') return ''
-      return calendarToSave.name || ''
+      return calendarToSave.name ?? ''
     }
   } else if (isCustomField) {
     // For custom fields, access the nested custom object safely
     const actualKey = fieldKey.substring(7) // Remove 'custom.' prefix
     return (row: TData) => {
-      const custom = (row as any).custom || {}
+      const custom = (row as any).custom ?? {}
       const value = custom[actualKey]
       return value ?? ''
     }
@@ -480,7 +469,7 @@ function renderSalesforceFieldType(
   isSourceType: boolean
 ): React.ReactNode {
   const colors = isSourceType ? SALESFORCE_TYPE_COLORS : PLANHAT_TYPE_COLORS
-  const color = colors[type as keyof typeof colors] || 'default'
+  const color = colors[type as keyof typeof colors] ?? 'default'
 
   return (
     <Tag color={color} className="text-xs">

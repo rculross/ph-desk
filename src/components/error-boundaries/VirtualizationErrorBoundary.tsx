@@ -41,7 +41,7 @@ interface ClassifiedError {
 // Error classification logic
 function classifyError(error: Error, errorInfo: ErrorInfo): ClassifiedError {
   const message = error.message.toLowerCase()
-  const stack = error.stack?.toLowerCase() || ''
+  const stack = error.stack?.toLowerCase() ?? ''
 
   // Virtualization-specific errors
   if (message.includes('virtual') || message.includes('scroll') || message.includes('overscan')) {
@@ -330,11 +330,11 @@ export class VirtualizationErrorBoundary extends Component<
     // Auto-retry for certain error types
     if (classifiedError.isRecoverable &&
         classifiedError.fallbackStrategy === 'retry' &&
-        this.state.retryCount < (this.props.maxRetries || 3)) {
+        this.state.retryCount < (this.props.maxRetries ?? 3)) {
 
       this.retryTimeoutId = setTimeout(() => {
         this.handleRetry()
-      }, this.props.retryDelay || 1000)
+      }, this.props.retryDelay ?? 1000)
     }
   }
 

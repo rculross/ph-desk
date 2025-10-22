@@ -11,7 +11,33 @@ playwright-report/
 # Electron specific
 electron/dist/
 electron/out/
+release/
 *.exe
 *.dmg
 *.AppImage
 *.snap
+*.blockmap
+*.zip
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS specific
+Thumbs.db
+.Spotlight-V100
+.Trashes
+
+# Vite
+.vite/
+
+# Electron store (user data during dev)
+electron-store/

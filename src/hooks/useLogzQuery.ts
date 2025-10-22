@@ -55,7 +55,7 @@ export function useLogzQuery() {
   const filterValidation = LogzService.validateFilters(filters)
 
   const query = useQuery({
-    queryKey: createLogsQueryKey(tenantSlug || null, filters, pagination),
+    queryKey: createLogsQueryKey(tenantSlug ?? null, filters, pagination),
     queryFn: async () => {
       log.info('Fetching logs', { filters, pagination })
 
@@ -183,7 +183,7 @@ export function useLogzMetadata() {
 
   // Calculate metadata from current logs
   const metadata = {
-    totalLoaded: logs.data?.length || 0,
+    totalLoaded: logs.data?.length ?? 0,
     isLoading,
     error,
     isEmpty: !isLoading && !error && (!logs.data || logs.data.length === 0),

@@ -280,8 +280,8 @@ export function IssueExporter({ className }: IssueExporterProps) {
     // Only log when field detection actually changes, not on every render
     if (fieldDetection.isLoading || fieldDetection.isError) {
       log.debug('Field detection state updated', {
-        'fieldMappings length': fieldDetection.fieldMappings.length || 0,
-        'includedFields length': fieldDetection.includedFields.length || 0,
+        'fieldMappings length': fieldDetection.fieldMappings.length ?? 0,
+        'includedFields length': fieldDetection.includedFields.length ?? 0,
         'isLoading': fieldDetection.isLoading,
         'isError': fieldDetection.isError,
         'error': fieldDetection.error,
@@ -548,7 +548,7 @@ export function IssueExporter({ className }: IssueExporterProps) {
         data={issues}
         fieldMappings={optimizedFieldMappings}
         entityType="issue"
-        tenantSlug={tenantSlug || undefined}
+        tenantSlug={tenantSlug ?? undefined}
         enablePersistence={true}
         persistColumnSizes={true}
         loading={isLoading && !isLoadingAllData}
@@ -628,7 +628,7 @@ export function IssueExporter({ className }: IssueExporterProps) {
       <OrderColumnsModal
         visible={reorderControl.isActive}
         onClose={reorderControl.setActive.bind(null, false)}
-        columns={fieldDetection.fieldMappings || []}
+        columns={fieldDetection.fieldMappings ?? []}
         onColumnsReorder={handleColumnsReorder}
         title="Reorder Table Columns"
         loading={fieldDetection.isLoading}

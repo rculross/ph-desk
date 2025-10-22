@@ -135,9 +135,9 @@ class IssuesService {
 
     // Build query params safely - exclude date filters which need client-side handling
     const queryParams: Record<string, any> = {
-      limit: pagination?.limit || 2000,
-      offset: pagination?.offset || 0,
-      sort: pagination?.sort || '-createdAt'
+      limit: pagination?.limit ?? 2000,
+      offset: pagination?.offset ?? 0,
+      sort: pagination?.sort ?? '-createdAt'
     }
 
     // Add non-date filters to query params
@@ -162,19 +162,19 @@ class IssuesService {
         queryParams,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
 
       // Wrap array response in pagination structure for consistency
       return {
-        data: data || [],
-        total: (data || []).length,
-        limit: pagination?.limit || 2000,
-        offset: pagination?.offset || 0,
-        hasMore: (data || []).length === (pagination?.limit || 2000)
+        data: data ?? [],
+        total: (data ?? []).length,
+        limit: pagination?.limit ?? 2000,
+        offset: pagination?.offset ?? 0,
+        hasMore: (data ?? []).length === (pagination?.limit ?? 2000)
       }
     } catch (error) {
       log.error('Failed to fetch issues:', error)
@@ -200,13 +200,13 @@ class IssuesService {
         undefined,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
 
-      return response.data || null
+      return response.data ?? null
     } catch (error) {
       log.error('Failed to fetch issue by ID:', error)
       throw error
@@ -226,8 +226,8 @@ class IssuesService {
         issueData,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
@@ -261,8 +261,8 @@ class IssuesService {
         updates,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
@@ -295,8 +295,8 @@ class IssuesService {
         `/issues/${issueId}`,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
@@ -319,13 +319,13 @@ class IssuesService {
         request,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
 
-      return response.data || []
+      return response.data ?? []
     } catch (error) {
       log.error('Failed to bulk update issues:', error)
       throw error
@@ -345,8 +345,8 @@ class IssuesService {
         { issueIds },
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
@@ -369,18 +369,18 @@ class IssuesService {
         request,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
 
       return (
-        response.data || {
+        response.data ?? {
           data: [],
           total: 0,
-          limit: request.limit || 2000,
-          offset: request.offset || 0,
+          limit: request.limit ?? 2000,
+          offset: request.offset ?? 0,
           hasMore: false
         }
       )
@@ -419,14 +419,14 @@ class IssuesService {
         undefined,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
 
       return (
-        response.data || {
+        response.data ?? {
           total: 0,
           byStatus: {} as Record<IssueStatus, number>,
           byPriority: {} as Record<IssuePriority, number>,
@@ -468,18 +468,18 @@ class IssuesService {
         undefined,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
 
       return (
-        response.data || {
+        response.data ?? {
           data: [],
           total: 0,
-          limit: pagination?.limit || 2000,
-          offset: pagination?.offset || 0,
+          limit: pagination?.limit ?? 2000,
+          offset: pagination?.offset ?? 0,
           hasMore: false
         }
       )
@@ -508,12 +508,12 @@ class IssuesService {
         {
           content,
           isInternal,
-          attachments: attachments || []
+          attachments: attachments ?? []
         },
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
@@ -631,9 +631,9 @@ class IssuesService {
    */
   async getComments(issueId: string, pagination?: { limit?: number; offset?: number }): Promise<any[]> {
     try {
-      const params = pagination ? `?limit=${pagination.limit || 50}&offset=${pagination.offset || 0}` : ''
+      const params = pagination ? `?limit=${pagination.limit ?? 50}&offset=${pagination.offset ?? 0}` : ''
       const response = await this.httpClient.get(`/issues/${issueId}/comments${params}`)
-      return response.data || []
+      return response.data ?? []
     } catch (error) {
       log.error('Failed to get comments:', { error: error instanceof Error ? error.message : error })
       throw error
@@ -702,7 +702,7 @@ class IssuesService {
       const response = await this.httpClient.post<{ downloadUrl: string }>(
         '/issues/export',
         {
-          format: options.format || 'csv',
+          format: options.format ?? 'csv',
           filters: options.filters,
           fields: options.fields,
           includeComments: false,
@@ -710,8 +710,8 @@ class IssuesService {
         },
         {
           metadata: {
-            priority: requestOptions?.priority || 'normal',
-            complexity: requestOptions?.complexity || 'moderate'
+            priority: requestOptions?.priority ?? 'normal',
+            complexity: requestOptions?.complexity ?? 'moderate'
           }
         }
       )

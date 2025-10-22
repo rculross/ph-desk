@@ -492,25 +492,42 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
 
         <div className="flex items-center gap-1 flex-shrink-0 ml-2">
           {availableTenants.length > 0 && (
-            <button
-              type="button"
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className="p-1 hover:bg-accent/50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            <div
+              onClick={(e) => {
+                e.stopPropagation()
+                if (!isRefreshing && !disabled) {
+                  handleRefresh(e as any)
+                }
+              }}
+              className={clsx(
+                'p-1 hover:bg-accent/50 rounded transition-colors cursor-pointer',
+                (isRefreshing || disabled) && 'opacity-50 cursor-not-allowed'
+              )}
               title="Refresh tenants"
               aria-label="Refresh tenants"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  if (!isRefreshing && !disabled) {
+                    handleRefresh(e as any)
+                  }
+                }
+              }}
             >
               <RefreshCw className={clsx(
                 'h-3 w-3 transition-transform duration-200',
                 isRefreshing && 'animate-spin'
               )} />
-            </button>
+            </div>
           )}
-          
+
           {isSwitching ? (
             <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
           ) : (
-            <ChevronDown 
+            <ChevronDown
               className={clsx(
                 'h-4 w-4 text-muted-foreground transition-transform duration-200',
                 isOpen && 'rotate-180'

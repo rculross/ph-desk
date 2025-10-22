@@ -170,7 +170,7 @@ class SalesforceDataProcessorService {
       // Step 4: Process dynamic sections (custom objects)
       const dynamicSectionsStart = performance.now()
       const dynamicObjectMappings = await this.processDynamicSections(
-        rawConfig.sections || [],
+        rawConfig.sections ?? [],
         filterUserFields,
         maxFields,
         requestId
@@ -331,7 +331,7 @@ class SalesforceDataProcessorService {
     }
 
     return {
-      name: rawConfig.name || 'Salesforce',
+      name: rawConfig.name ?? 'Salesforce',
       description: '', // Empty for privacy - no user data exposed
       isActive: rawConfig.isActive || false,
       lastSync,
@@ -392,7 +392,7 @@ class SalesforceDataProcessorService {
       )
 
       // Determine sync direction
-      const direction: SalesforceDirection | null = objectSettings.direction || null
+      const direction: SalesforceDirection | null = objectSettings.direction ?? null
 
       // Build object mapping
       const mapping: SalesforceObjectMapping = {
@@ -473,9 +473,9 @@ class SalesforceDataProcessorService {
 
       // Build object mapping
       const mapping: SalesforceObjectMapping = {
-        sfObject: section.sfObject || 'Unknown',
-        phObject: section.phObject || 'Unknown',
-        direction: section.direction || null,
+        sfObject: section.sfObject ?? 'Unknown',
+        phObject: section.phObject ?? 'Unknown',
+        direction: section.direction ?? null,
         fieldCount: rawFields.length,
         fields: processedFields,
         filters: this.buildDynamicFilterDescription(section),
@@ -543,15 +543,15 @@ class SalesforceDataProcessorService {
 
         // Convert to standardized format
         const field: SalesforceFieldMapping = {
-          sfField: rawField.sfField || '',
-          phField: rawField.phField || '',
-          direction: rawField.direction || 'none',
-          sfType: rawField.sfType || 'string',
-          phType: rawField.phType || 'string',
-          type: rawField.type || 'custom',
+          sfField: rawField.sfField ?? '',
+          phField: rawField.phField ?? '',
+          direction: rawField.direction ?? 'none',
+          sfType: rawField.sfType ?? 'string',
+          phType: rawField.phType ?? 'string',
+          type: rawField.type ?? 'custom',
           onlySend: rawField.onlySend || false,
-          default: rawField.default || '',
-          reference: rawField.reference || null,
+          default: rawField.default ?? '',
+          reference: rawField.reference ?? null,
           sfListValues: Array.isArray(rawField.sfListValues) ? rawField.sfListValues : []
         }
 
@@ -596,14 +596,14 @@ class SalesforceDataProcessorService {
 
       // Convert dynamic field format to standard format
       const field: SalesforceFieldMapping = {
-        sfField: rawField.sfProp || '',
-        phField: rawField.phProp || '',
-        direction: rawField.direction || 'none',
-        sfType: rawField.sfType || 'string',
-        phType: rawField.phType || 'string',
+        sfField: rawField.sfProp ?? '',
+        phField: rawField.phProp ?? '',
+        direction: rawField.direction ?? 'none',
+        sfType: rawField.sfType ?? 'string',
+        phType: rawField.phType ?? 'string',
         type: 'custom', // Dynamic fields are always custom
         onlySend: false,
-        default: rawField.sfDefaultVal || rawField.phDefaultVal || '',
+        default: (rawField.sfDefaultVal || rawField.phDefaultVal) ?? '',
         reference: null,
         sfListValues: Array.isArray(rawField.sfListValues) ? rawField.sfListValues : []
       }
@@ -726,8 +726,8 @@ class SalesforceDataProcessorService {
     // Sort objects by complexity for better rendering performance
     objectMappings.sort((a, b) => {
       const complexityOrder = { low: 1, medium: 2, high: 3 }
-      const aOrder = complexityOrder[a.complexity || 'medium']
-      const bOrder = complexityOrder[b.complexity || 'medium']
+      const aOrder = complexityOrder[a.complexity ?? 'medium']
+      const bOrder = complexityOrder[b.complexity ?? 'medium']
       return aOrder - bOrder
     })
   }
@@ -755,12 +755,12 @@ class SalesforceDataProcessorService {
   }
 
   private isUserField(field: any): boolean {
-    const fieldName = field.sfField || field.phField || ''
+    const fieldName = (field.sfField || field.phField) ?? ''
     return this.userFieldPatterns.some(pattern => pattern.test(fieldName))
   }
 
   private isDynamicUserField(field: any): boolean {
-    const fieldName = field.sfProp || field.phProp || ''
+    const fieldName = (field.sfProp || field.phProp) ?? ''
     return this.userFieldPatterns.some(pattern => pattern.test(fieldName))
   }
 
@@ -817,7 +817,7 @@ class SalesforceDataProcessorService {
     rawConfig: SalesforceRawConfiguration,
     metrics: ProcessingMetrics
   ): string {
-    const configHash = rawConfig.key || 'unknown'
+    const configHash = rawConfig.key ?? 'unknown'
     const fieldHash = metrics.fieldCount.toString()
     const timestamp = Math.floor(Date.now() / 1000).toString()
     return `${configHash}_${fieldHash}_${timestamp}`

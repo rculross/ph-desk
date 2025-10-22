@@ -51,13 +51,13 @@ class WorkflowsService {
       params,
       {
         metadata: {
-          priority: options?.priority || 'normal',
-          complexity: options?.complexity || 'moderate'
+          priority: options?.priority ?? 'normal',
+          complexity: options?.complexity ?? 'moderate'
         }
       }
     )
 
-    return response || []
+    return response ?? []
   }
 
   async getWorkflowTemplatesPage(

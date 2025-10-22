@@ -40,15 +40,15 @@ export class LLMError extends Error {
   getUserMessage(): string {
     switch (this.code) {
       case 'NO_API_KEY':
-        return `Please set up an API key for ${this.provider || 'this provider'} first.`
+        return `Please set up an API key for ${this.provider ?? 'this provider'} first.`
       case 'INVALID_API_KEY':
-        return `The API key for ${this.provider || 'this provider'} is invalid or expired.`
+        return `The API key for ${this.provider ?? 'this provider'} is invalid or expired.`
       case 'REQUEST_FAILED':
         return 'The request failed. Please try again.'
       case 'RATE_LIMITED':
         return 'Too many requests. Please wait a moment before trying again.'
       case 'QUOTA_EXCEEDED':
-        return `You've exceeded your quota for ${this.provider || 'this provider'}.`
+        return `You've exceeded your quota for ${this.provider ?? 'this provider'}.`
       case 'MODEL_NOT_AVAILABLE':
         return 'The requested model is not available.'
       case 'NETWORK_ERROR':

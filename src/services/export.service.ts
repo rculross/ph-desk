@@ -140,11 +140,11 @@ export class ExportService extends ExportJobOrchestrator {
       totalRecords = firstBatch.total
     }
 
-    const { jobId, signal } = this.initializeJob({ totalRecords: totalRecords || 0 })
+    const { jobId, signal } = this.initializeJob({ totalRecords: totalRecords ?? 0 })
 
     this.log.debug('Streaming export job initialized', {
       jobId,
-      totalRecords: totalRecords || 0,
+      totalRecords: totalRecords ?? 0,
       activeJobs: this.activeJobs.size
     })
 
@@ -267,7 +267,7 @@ export class ExportService extends ExportJobOrchestrator {
         format: request.format,
         totalRecords: request.data.length,
         blobSize: blob.size,
-        processingTime: Date.now() - (this.activeJobs.get(jobId)?.startTime || 0)
+        processingTime: Date.now() - (this.activeJobs.get(jobId)?.startTime ?? 0)
       })
 
       this.updateProgress(jobId, {
@@ -324,7 +324,7 @@ export class ExportService extends ExportJobOrchestrator {
       // Initialize progress tracking
       const startTime = Date.now()
 
-      while (processedRecords < (request.totalRecords || 0)) {
+      while (processedRecords < (request.totalRecords ?? 0)) {
         if (signal.aborted) {
           this.log.info('Streaming export processing aborted', {
             jobId,
@@ -368,13 +368,13 @@ export class ExportService extends ExportJobOrchestrator {
 
         // Update progress
         const progress = Math.min(
-          (processedRecords / (request.totalRecords || processedRecords)) * 80,
+          (processedRecords / (request.totalRecords ?? processedRecords)) * 80,
           80
         )
         const elapsed = Date.now() - startTime
         const estimatedTimeRemaining =
           processedRecords > 0
-            ? (elapsed / processedRecords) * ((request.totalRecords || 0) - processedRecords)
+            ? (elapsed / processedRecords) * ((request.totalRecords ?? 0) - processedRecords)
             : undefined
 
         this.log.debug('Batch processing completed', {
@@ -627,7 +627,7 @@ export class ExportService extends ExportJobOrchestrator {
     const jsonData = {
       exportInfo: {
         exportedAt: new Date().toISOString(),
-        timezone: options.timezone || 'UTC',
+        timezone: options.timezone ?? 'UTC',
         totalRecords: data.length,
         version: '1.0'
       },
@@ -669,7 +669,7 @@ export class ExportService extends ExportJobOrchestrator {
     const metaData = [
       ['Export Information', ''],
       ['Exported At', new Date().toISOString()],
-      ['Timezone', options.timezone || 'UTC'],
+      ['Timezone', options.timezone ?? 'UTC'],
       ['Total Records', data.length],
       ['Fields Exported', activeFields.length],
       ['', ''],
@@ -707,7 +707,7 @@ export class ExportService extends ExportJobOrchestrator {
       case 'date':
         if (value instanceof Date || typeof value === 'string') {
           const date = value instanceof Date ? value : new Date(value)
-          return format(date, options.dateFormat || 'yyyy-MM-dd')
+          return format(date, options.dateFormat ?? 'yyyy-MM-dd')
         }
         return value
 
@@ -769,7 +769,7 @@ export class ExportService extends ExportJobOrchestrator {
           return value
         }
         if (typeof value === 'object' && value) {
-          return value.name || value.email || value.id || 'Unknown User'
+          return (value.name || value.email || value.id) ?? 'Unknown User'
         }
         return value
 
@@ -779,7 +779,7 @@ export class ExportService extends ExportJobOrchestrator {
           return value.map(user => {
             if (typeof user === 'string') return user
             if (typeof user === 'object' && user) {
-              return user.name || user.email || user.id || 'Unknown User'
+              return (user.name || user.email || user.id) ?? 'Unknown User'
             }
             return String(user)
           }).join(', ')

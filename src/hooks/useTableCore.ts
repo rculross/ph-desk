@@ -3,6 +3,12 @@
  *
  * Provides a clean, minimal TanStack Table implementation following best practices.
  * Separates table logic from UI rendering and state management.
+ *
+ * Features:
+ * - Tenant-specific persistence for column widths, order, and visibility
+ * - Debounced state saving (500ms) to prevent excessive storage operations
+ * - Automatic state loading on mount with validation
+ * - Storage backend abstraction (electron-store or localStorage)
  */
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
@@ -44,6 +50,10 @@ const isValidColumnSizingState = (value: unknown): value is ColumnSizingState =>
 
 const isValidColumnOrderState = (value: unknown): value is ColumnOrderState => {
   return Array.isArray(value) && value.every(columnId => typeof columnId === 'string')
+}
+
+const isValidColumnVisibilityState = (value: unknown): value is VisibilityState => {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 
@@ -96,13 +106,14 @@ export interface UseTableCoreOptions<TData> {
   pageIndex?: number
   onPaginationChange?: (pagination: PaginationState) => void
 
-  // Column persistence
-  persistColumnSizes?: boolean
-  persistenceContext?: string
-  persistColumnOrder?: boolean
-  enablePersistence?: boolean
-  persistenceKey?: string
-  persistenceScope?: TablePersistenceScope
+  // Column persistence - all three features enabled when tenantSlug is provided
+  persistColumnSizes?: boolean         // Persist column widths (requires enableColumnResizing)
+  persistenceContext?: string          // Legacy persistence context identifier
+  persistColumnOrder?: boolean         // Persist column order (drag-and-drop arrangement)
+  persistColumnVisibility?: boolean    // Persist column visibility (show/hide columns)
+  enablePersistence?: boolean          // Master switch to enable all persistence features
+  persistenceKey?: string              // Custom persistence key (overrides auto-generated keys)
+  persistenceScope?: TablePersistenceScope  // Tenant-specific persistence scope
 }
 
 export interface UseTableCoreResult<TData> {
@@ -185,6 +196,7 @@ export function useTableCore<TData>({
   persistColumnSizes = false,
   persistenceContext = 'default',
   persistColumnOrder = false,
+  persistColumnVisibility = false,
   enablePersistence,
   persistenceKey,
   persistenceScope
@@ -207,11 +219,12 @@ export function useTableCore<TData>({
   })
 
   const [isPersistenceLoaded, setIsPersistenceLoaded] = useState<boolean>(
-    !(enablePersistence ?? persistColumnSizes ?? persistColumnOrder)
+    !(enablePersistence ?? persistColumnSizes ?? persistColumnOrder ?? persistColumnVisibility)
   )
 
   const columnSizingDebounceRef = useRef<NodeJS.Timeout | null>(null)
   const columnOrderDebounceRef = useRef<NodeJS.Timeout | null>(null)
+  const columnVisibilityDebounceRef = useRef<NodeJS.Timeout | null>(null)
 
   const resolvedPersistenceBase = useMemo(() => {
     if (persistenceKey) {
@@ -230,7 +243,7 @@ export function useTableCore<TData>({
   }, [persistenceKey, persistenceScope?.entityType, persistenceScope?.tenantSlug, persistenceContext])
 
   const resolvedEnablePersistence = Boolean(
-    enablePersistence ?? persistColumnSizes ?? persistColumnOrder
+    enablePersistence ?? persistColumnSizes ?? persistColumnOrder ?? persistColumnVisibility
   )
 
   const shouldPersistColumnSizing = Boolean(
@@ -242,6 +255,10 @@ export function useTableCore<TData>({
     resolvedEnablePersistence && persistColumnOrder && resolvedPersistenceBase
   )
 
+  const shouldPersistColumnVisibility = Boolean(
+    resolvedEnablePersistence && persistColumnVisibility && resolvedPersistenceBase
+  )
+
   const primaryColumnSizingKey = shouldPersistColumnSizing
     ? `table-column-widths-${resolvedPersistenceBase}`
     : undefined
@@ -251,13 +268,17 @@ export function useTableCore<TData>({
     ? `table-column-order-${resolvedPersistenceBase}`
     : undefined
 
+  const primaryColumnVisibilityKey = shouldPersistColumnVisibility
+    ? `table-column-visibility-${resolvedPersistenceBase}`
+    : undefined
+
 
   const persistenceBackend = useMemo(() => {
     if (!resolvedEnablePersistence || !resolvedPersistenceBase) {
       return null
     }
 
-    if (typeof chrome !== 'undefined' && chrome.storage.local) {
+    if (typeof window !== 'undefined' && window.electron.storage) {
       return {
         type: 'storageManager' as const,
         get: storageManager.safeGet,
@@ -320,7 +341,7 @@ export function useTableCore<TData>({
   }, [resolvedEnablePersistence, resolvedPersistenceBase])
 
   useEffect(() => {
-    if (!shouldPersistColumnSizing && !shouldPersistColumnOrder) {
+    if (!shouldPersistColumnSizing && !shouldPersistColumnOrder && !shouldPersistColumnVisibility) {
       setIsPersistenceLoaded(true)
       return
     }
@@ -335,10 +356,11 @@ export function useTableCore<TData>({
     const loadPersistedState = async () => {
       let persistedSizing: ColumnSizingState | undefined
       let persistedOrder: ColumnOrderState | undefined
+      let persistedVisibility: VisibilityState | undefined
 
       try {
         if (persistenceBackend) {
-          const keysToLoad = [primaryColumnSizingKey, primaryColumnOrderKey].filter(
+          const keysToLoad = [primaryColumnSizingKey, primaryColumnOrderKey, primaryColumnVisibilityKey].filter(
             (key): key is string => Boolean(key)
           )
 
@@ -366,6 +388,17 @@ export function useTableCore<TData>({
                 })
               }
             }
+            if (primaryColumnVisibilityKey && stored[primaryColumnVisibilityKey]) {
+              const candidateVisibility = stored[primaryColumnVisibilityKey]
+              if (isValidColumnVisibilityState(candidateVisibility)) {
+                persistedVisibility = candidateVisibility
+              } else {
+                log.warn('Ignoring invalid persisted column visibility state', {
+                  context: resolvedPersistenceBase,
+                  key: primaryColumnVisibilityKey
+                })
+              }
+            }
           }
         }
       } catch (error) {
@@ -389,6 +422,10 @@ export function useTableCore<TData>({
         setColumnOrder(persistedOrder)
       }
 
+      if (persistedVisibility && isValidColumnVisibilityState(persistedVisibility)) {
+        setColumnVisibility(prev => ({ ...prev, ...persistedVisibility }))
+      }
+
       setIsPersistenceLoaded(true)
     }
 
@@ -400,9 +437,11 @@ export function useTableCore<TData>({
   }, [
     shouldPersistColumnSizing,
     shouldPersistColumnOrder,
+    shouldPersistColumnVisibility,
     isPersistenceLoaded,
     primaryColumnSizingKey,
     primaryColumnOrderKey,
+    primaryColumnVisibilityKey,
     resolvedPersistenceBase,
     persistenceBackend
   ])
@@ -414,6 +453,9 @@ export function useTableCore<TData>({
       }
       if (columnOrderDebounceRef.current) {
         clearTimeout(columnOrderDebounceRef.current)
+      }
+      if (columnVisibilityDebounceRef.current) {
+        clearTimeout(columnVisibilityDebounceRef.current)
       }
     }
   }, [])
@@ -473,6 +515,30 @@ export function useTableCore<TData>({
     [shouldPersistColumnOrder, persistenceBackend, primaryColumnOrderKey, resolvedPersistenceBase]
   )
 
+  const persistColumnVisibilityState = useCallback(
+    (visibility: VisibilityState) => {
+      if (!shouldPersistColumnVisibility || !persistenceBackend || !primaryColumnVisibilityKey) {
+        return
+      }
+
+      if (columnVisibilityDebounceRef.current) {
+        clearTimeout(columnVisibilityDebounceRef.current)
+      }
+
+      columnVisibilityDebounceRef.current = setTimeout(async () => {
+        try {
+          await persistenceBackend.set({ [primaryColumnVisibilityKey]: visibility })
+        } catch (error) {
+          log.error('Failed to persist column visibility', {
+            context: resolvedPersistenceBase,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          })
+        }
+      }, 500)
+    },
+    [shouldPersistColumnVisibility, persistenceBackend, primaryColumnVisibilityKey, resolvedPersistenceBase]
+  )
+
   // Handle external callbacks and persistence through useEffect hooks
   // This ensures TanStack Table compliance by keeping state setters pure
 
@@ -518,6 +584,14 @@ export function useTableCore<TData>({
       persistColumnOrderState(columnOrder)
     }
   }, [columnOrder, onColumnOrderChange, persistColumnOrderState, isPersistenceLoaded])
+
+  // Handle column visibility changes with persistence
+  useEffect(() => {
+    // Persist state if needed
+    if (isPersistenceLoaded) {
+      persistColumnVisibilityState(columnVisibility)
+    }
+  }, [columnVisibility, persistColumnVisibilityState, isPersistenceLoaded])
 
   // Handle grouping changes
   useEffect(() => {

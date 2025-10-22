@@ -238,9 +238,9 @@ export const LLMIntegration: React.FC<LLMIntegrationProps> = ({ className }) => 
           const models = await llmService.fetchAvailableModels(provider, apiKey)
 
           // Get saved preferences for this provider
-          const savedPreferences = await chrome.storage.local.get(['llm-model-preferences'])
-          const allPreferences = savedPreferences['llm-model-preferences'] || {}
-          const providerPreferences = allPreferences[provider] || {}
+          const savedPreferences = await window.electron.storage.get(['llm-model-preferences'])
+          const allPreferences = savedPreferences['llm-model-preferences'] ?? {}
+          const providerPreferences = allPreferences[provider] ?? {}
 
           // Add models with enabled status
           for (const model of models) {
@@ -483,7 +483,7 @@ export const LLMIntegration: React.FC<LLMIntegrationProps> = ({ className }) => 
       value: m.modelId,
       label: m.displayName,
       description: m.description
-    })) || []
+    })) ?? []
   }
 
   // Initialize with first available provider
@@ -669,7 +669,7 @@ export const LLMIntegration: React.FC<LLMIntegrationProps> = ({ className }) => 
               min={100}
               max={4000}
               value={maxTokens}
-              onChange={(value) => setMaxTokens(value || 1000)}
+              onChange={(value) => setMaxTokens(value ?? 1000)}
               style={{ width: '100%' }}
             />
           </Form.Item>

@@ -42,7 +42,20 @@ contextBridge.exposeInMainWorld('electron', {
      * Check if currently authenticated
      * @returns {Promise<boolean>}
      */
-    isAuthenticated: () => ipcRenderer.invoke('auth:isAuthenticated')
+    isAuthenticated: () => ipcRenderer.invoke('auth:isAuthenticated'),
+
+    /**
+     * Save last production tenant slug
+     * @param {string} tenantSlug - Tenant slug to save
+     * @returns {Promise<void>}
+     */
+    saveLastProdTenant: (tenantSlug) => ipcRenderer.invoke('auth:saveLastProdTenant', tenantSlug),
+
+    /**
+     * Logout and clear session
+     * @returns {Promise<void>}
+     */
+    logout: () => ipcRenderer.invoke('auth:logout')
   },
 
   // Storage APIs - implemented in Phase 2
@@ -82,8 +95,22 @@ contextBridge.exposeInMainWorld('electron', {
     getBytesInUse: (keys) => ipcRenderer.invoke('storage:getBytesInUse', keys),
   },
 
+  // Preferences are now managed by electron-preferences library
+  // Access via File -> Preferences menu (Cmd+,)
+  // No renderer process API needed
+
   // Placeholder for future file system APIs (Phase 5)
   files: {
     // Will implement: export, download, etc.
+  },
+
+  // Window APIs
+  window: {
+    /**
+     * Set window title
+     * @param {string} title - New window title
+     * @returns {Promise<void>}
+     */
+    setTitle: (title) => ipcRenderer.invoke('window:setTitle', title)
   }
 });

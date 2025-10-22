@@ -1,6 +1,26 @@
 /**
  * Table Persistence Hook
  *
+ * @deprecated This hook is deprecated. Use useTableCore's built-in persistence instead.
+ *
+ * The useTableCore hook now handles persistence for column widths, order, AND visibility
+ * automatically when tenantSlug is provided. This legacy hook only handles widths and order.
+ *
+ * Migration example:
+ * ```typescript
+ * // OLD (deprecated):
+ * const persistence = useTablePersistence({ entityType, tenantSlug })
+ * persistence.saveColumnWidths(widths)
+ *
+ * // NEW (recommended):
+ * const { table } = useTableCore({
+ *   data,
+ *   columns,
+ *   persistenceScope: { entityType, tenantSlug },
+ *   enablePersistence: true  // Enables widths, order, AND visibility
+ * })
+ * ```
+ *
  * Handles saving and loading table state (column widths, column order) using StorageManager.
  * Integrates with TanStack Table's built-in state management.
  */
@@ -125,8 +145,8 @@ export function useTablePersistence({
       const keys = getStorageKeys()
       const stored = await storageManager.safeGet([keys.columnWidths, keys.columnOrder])
 
-      const columnSizing = stored[keys.columnWidths] || {}
-      const columnOrder = stored[keys.columnOrder] || []
+      const columnSizing = stored[keys.columnWidths] ?? {}
+      const columnOrder = stored[keys.columnOrder] ?? []
 
       log.debug('Table state loaded', {
         entityType,

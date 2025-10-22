@@ -173,7 +173,7 @@ export function parseSecureJson<T = any>(
     }
 
     if (!suppressLogging) {
-      log.debug('JSON parsed successfully', { size, keys: Object.keys(parsed || {}).length })
+      log.debug('JSON parsed successfully', { size, keys: Object.keys(parsed ?? {}).length })
     }
     
     return {
@@ -224,7 +224,7 @@ export function safeJsonParse<T = any>(
     return defaultValue
   }
 
-  throw new Error(result.error || 'JSON parsing failed')
+  throw new Error(result.error ?? 'JSON parsing failed')
 }
 
 /**

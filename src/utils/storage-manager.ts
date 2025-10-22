@@ -2,40 +2,23 @@
  * Electron Storage Manager
  *
  * Provides safe storage operations using Electron's persistent storage.
- * Maintains API compatibility with Chrome extension version.
+ * Focuses on security (prototype pollution prevention) and data preprocessing.
  */
 
 import { logger } from './logger'
 
 const log = logger.api
 
-export interface StorageQuotaInfo {
-  bytesInUse: number
-  quotaBytes: number
-  percentageUsed: number
-  available: number
-}
-
 export interface StorageOperationOptions {
   maxSize?: number // Maximum size in bytes for this operation
   priority?: 'high' | 'medium' | 'low'
-  skipQuotaCheck?: boolean
-}
-
-export interface StorageValidationResult {
-  isValid: boolean
-  error?: string
-  size?: number
-  quotaInfo?: StorageQuotaInfo
 }
 
 /**
  * Check if Electron storage API is available
  */
 function isElectronStorageAvailable(): boolean {
-  return typeof window !== 'undefined' &&
-         window.electron !== undefined &&
-         window.electron.storage !== undefined
+  return window.electron.storage !== undefined
 }
 
 /**
@@ -54,17 +37,11 @@ function getStorageAPI() {
 export class StorageManager {
   private static instance: StorageManager
 
-  // Storage limits - set conservatively for desktop app
-  private readonly MAX_QUOTA_BYTES = 100 * 1024 * 1024 // 100MB for desktop (more generous than Chrome)
-  private readonly MAX_ITEM_SIZE = 10 * 1024 * 1024 // 10MB per item (larger than Chrome)
-  private readonly MAX_ERROR_SIZE = 1024 // 1KB max for error objects
-  private readonly QUOTA_WARNING_THRESHOLD = 0.7 // 70% usage warning
-  private readonly QUOTA_ERROR_THRESHOLD = 0.85 // 85% usage error
-  private readonly CRITICAL_THRESHOLD = 0.95 // 95% critical - force cleanup
+  // Storage limits for desktop app (generous compared to Chrome extension constraints)
+  private readonly MAX_ITEM_SIZE = 10 * 1024 * 1024 // 10MB per item
 
   private constructor() {
     log.info('Electron storage manager initialized', {
-      maxQuota: this.formatBytes(this.MAX_QUOTA_BYTES),
       maxItemSize: this.formatBytes(this.MAX_ITEM_SIZE),
       platform: typeof window !== 'undefined' && window.electron ? window.electron.platform : 'unknown'
     })
@@ -78,125 +55,33 @@ export class StorageManager {
   }
 
   /**
-   * Get current storage quota information
+   * Validate storage operation - checks data size only
    */
-  public async getQuotaInfo(): Promise<StorageQuotaInfo> {
-    try {
-      const storage = getStorageAPI()
-      const bytesInUse = await storage.getBytesInUse(null)
-
-      const quotaInfo: StorageQuotaInfo = {
-        bytesInUse,
-        quotaBytes: this.MAX_QUOTA_BYTES,
-        percentageUsed: bytesInUse / this.MAX_QUOTA_BYTES,
-        available: this.MAX_QUOTA_BYTES - bytesInUse
-      }
-
-      // Only log quota info when there are actual changes or issues
-      if (quotaInfo.percentageUsed >= this.QUOTA_WARNING_THRESHOLD) {
-        log.debug('Storage quota info retrieved', {
-          used: this.formatBytes(quotaInfo.bytesInUse),
-          percentage: `${(quotaInfo.percentageUsed * 100).toFixed(1)}%`
-        })
-      }
-
-      return quotaInfo
-    } catch (error) {
-      log.error('Failed to get quota info', { error: error instanceof Error ? error.message : 'Unknown error' })
-      throw error
-    }
-  }
-
-  /**
-   * Enhanced storage operation validation with cleanup
-   */
-  public async validateStorageOperation(
+  private validateStorageOperation(
     data: Record<string, any>,
     options: StorageOperationOptions = {}
-  ): Promise<StorageValidationResult> {
-    try {
-      // Pre-process data to limit error object sizes
-      const processedData = this.preprocessData(data)
+  ): { isValid: boolean; error?: string; size: number } {
+    // Pre-process data to limit error object sizes
+    const processedData = this.preprocessData(data)
 
-      // Calculate data size
-      const dataSize = this.calculateDataSize(processedData)
-      const maxSize = options.maxSize || this.MAX_ITEM_SIZE
+    // Calculate data size
+    const dataSize = this.calculateDataSize(processedData)
+    const maxSize = options.maxSize || this.MAX_ITEM_SIZE
 
-      // Basic size validation
-      if (dataSize > maxSize) {
-        return {
-          isValid: false,
-          error: `Data size (${this.formatBytes(dataSize)}) exceeds maximum allowed (${this.formatBytes(maxSize)})`,
-          size: dataSize
-        }
-      }
-
-      // Skip quota check if requested
-      if (options.skipQuotaCheck) {
-        return { isValid: true, size: dataSize }
-      }
-
-      // Check quota availability
-      const quotaInfo = await this.getQuotaInfo()
-
-      // Critical threshold - force cleanup
-      if (quotaInfo.percentageUsed >= this.CRITICAL_THRESHOLD) {
-        log.warn('Storage at critical level - forcing emergency cleanup')
-        await this.emergencyCleanup()
-
-        // Re-check quota after cleanup
-        const newQuotaInfo = await this.getQuotaInfo()
-        if (newQuotaInfo.percentageUsed >= this.QUOTA_ERROR_THRESHOLD) {
-          return {
-            isValid: false,
-            error: `Storage quota critical (${(newQuotaInfo.percentageUsed * 100).toFixed(1)}% used even after cleanup)`,
-            size: dataSize,
-            quotaInfo: newQuotaInfo
-          }
-        }
-        // Update quota info after cleanup
-        Object.assign(quotaInfo, newQuotaInfo)
-      }
-
-      // Error threshold check
-      if (quotaInfo.percentageUsed >= this.QUOTA_ERROR_THRESHOLD) {
-        return {
-          isValid: false,
-          error: `Storage quota nearly exhausted (${(quotaInfo.percentageUsed * 100).toFixed(1)}% used)`,
-          size: dataSize,
-          quotaInfo
-        }
-      }
-
-      // Check if this operation would exceed quota
-      if (dataSize > quotaInfo.available) {
-        return {
-          isValid: false,
-          error: `Operation would exceed storage quota. Required: ${this.formatBytes(dataSize)}, Available: ${this.formatBytes(quotaInfo.available)}`,
-          size: dataSize,
-          quotaInfo
-        }
-      }
-
-      // Warn if approaching quota limit
-      if (quotaInfo.percentageUsed >= this.QUOTA_WARNING_THRESHOLD) {
-        log.warn('Storage quota approaching limit', {
-          current: `${(quotaInfo.percentageUsed * 100).toFixed(1)}%`,
-          available: this.formatBytes(quotaInfo.available)
-        })
-      }
-
-      return { isValid: true, size: dataSize, quotaInfo }
-    } catch (error) {
+    // Basic size validation
+    if (dataSize > maxSize) {
       return {
         isValid: false,
-        error: `Storage validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+        error: `Data size (${this.formatBytes(dataSize)}) exceeds maximum allowed (${this.formatBytes(maxSize)})`,
+        size: dataSize
       }
     }
+
+    return { isValid: true, size: dataSize }
   }
 
   /**
-   * Safe storage set operation with validation
+   * Safe storage set operation with validation and security checks
    */
   public async safeSet(
     data: Record<string, any>,
@@ -205,13 +90,13 @@ export class StorageManager {
     // Validate keys for security and preprocess data
     const sanitizedData = this.sanitizeKeys(this.preprocessData(data))
 
-    const validation = await this.validateStorageOperation(sanitizedData, options)
+    const validation = this.validateStorageOperation(sanitizedData, options)
 
     if (!validation.isValid) {
       const error = new Error(`Storage operation blocked: ${validation.error}`)
       log.error('Storage set operation blocked', {
         error: validation.error,
-        dataSize: validation.size ? this.formatBytes(validation.size) : 'unknown'
+        dataSize: this.formatBytes(validation.size)
       })
       throw error
     }
@@ -220,12 +105,12 @@ export class StorageManager {
       const storage = getStorageAPI()
       await storage.set(sanitizedData)
 
-      // Only log storage operations for large data or when explicitly needed for debugging
-      if (validation.size && validation.size > 5120) { // Log only operations larger than 5KB
+      // Log only large operations
+      if (validation.size > 5120) { // Log only operations larger than 5KB
         log.debug('Storage set operation completed', {
           keys: Object.keys(data),
-          size: validation.size ? this.formatBytes(validation.size) : 'unknown',
-          priority: options.priority || 'medium'
+          size: this.formatBytes(validation.size),
+          priority: options.priority ?? 'medium'
         })
       }
 
@@ -283,146 +168,6 @@ export class StorageManager {
     }
   }
 
-  /**
-   * Clear storage with confirmation
-   */
-  public async clearStorage(confirmationKey: string = ''): Promise<void> {
-    if (confirmationKey !== 'CONFIRM_CLEAR_ALL_STORAGE') {
-      throw new Error('Storage clear operation requires explicit confirmation')
-    }
-
-    try {
-      const quotaInfo = await this.getQuotaInfo()
-      const storage = getStorageAPI()
-      await storage.clear()
-
-      log.info('Storage cleared successfully', {
-        clearedSize: this.formatBytes(quotaInfo.bytesInUse)
-      })
-
-    } catch (error) {
-      log.error('Storage clear operation failed', {
-        error: error instanceof Error ? error.message : 'Unknown error'
-      })
-      throw error
-    }
-  }
-
-  /**
-   * Basic cleanup - removes temp and cache items only
-   */
-  public async cleanupStorage(): Promise<void> {
-    try {
-      const quotaInfo = await this.getQuotaInfo()
-
-      if (quotaInfo.percentageUsed < this.QUOTA_WARNING_THRESHOLD) {
-        log.debug('Storage cleanup skipped - usage below warning threshold')
-        return
-      }
-
-      log.info('Starting basic storage cleanup', {
-        currentUsage: `${(quotaInfo.percentageUsed * 100).toFixed(1)}%`
-      })
-
-      // Get all storage items
-      const allItems = await this.safeGet(null)
-      const cleanupKeys: string[] = []
-
-      // Find simple cleanup candidates (temp/cache items only)
-      for (const key of Object.keys(allItems)) {
-        if (key.startsWith('temp_') || key.startsWith('cache_') || key.startsWith('tmp_')) {
-          cleanupKeys.push(key)
-        }
-      }
-
-      // Remove cleanup candidates
-      if (cleanupKeys.length > 0) {
-        await this.safeRemove(cleanupKeys)
-
-        const newQuotaInfo = await this.getQuotaInfo()
-        const freedSpace = quotaInfo.bytesInUse - newQuotaInfo.bytesInUse
-
-        log.info('Storage cleanup completed', {
-          removedItems: cleanupKeys.length,
-          freedSpace: this.formatBytes(freedSpace),
-          newUsage: `${(newQuotaInfo.percentageUsed * 100).toFixed(1)}%`
-        })
-      } else {
-        log.info('Storage cleanup completed - no temporary items to remove')
-      }
-
-    } catch (error) {
-      log.error('Storage cleanup failed', {
-        error: error instanceof Error ? error.message : 'Unknown error'
-      })
-    }
-  }
-
-  /**
-   * Emergency cleanup - aggressive cleanup when storage is critical
-   */
-  public async emergencyCleanup(): Promise<void> {
-    try {
-      log.warn('Starting emergency storage cleanup')
-
-      const allItems = await this.safeGet(null)
-      const cleanupKeys: string[] = []
-      const largeItems: Array<{ key: string; size: number }> = []
-
-      // Find all cleanup candidates
-      for (const [key, value] of Object.entries(allItems)) {
-        const itemSize = this.calculateDataSize({ [key]: value })
-
-        // Immediate removal candidates
-        if (
-          key.startsWith('temp_') ||
-          key.startsWith('cache_') ||
-          key.startsWith('tmp_') ||
-          key.startsWith('error_') ||
-          key.includes('notification') ||
-          key.includes('log_')
-        ) {
-          cleanupKeys.push(key)
-          continue
-        }
-
-        // Track large items for potential removal
-        if (itemSize > 2048) { // Items larger than 2KB
-          largeItems.push({ key, size: itemSize })
-        }
-      }
-
-      // Remove immediate candidates
-      if (cleanupKeys.length > 0) {
-        await this.safeRemove(cleanupKeys)
-      }
-
-      // Check if we need more aggressive cleanup
-      const quotaInfo = await this.getQuotaInfo()
-      if (quotaInfo.percentageUsed >= this.QUOTA_ERROR_THRESHOLD) {
-        // Remove largest items until we're under threshold
-        largeItems
-          .sort((a, b) => b.size - a.size)
-          .slice(0, Math.min(10, largeItems.length)) // Remove up to 10 largest items
-          .forEach(item => cleanupKeys.push(item.key))
-
-        if (cleanupKeys.length > 0) {
-          await this.safeRemove(cleanupKeys)
-        }
-      }
-
-      const finalQuotaInfo = await this.getQuotaInfo()
-      log.info('Emergency cleanup completed', {
-        removedItems: cleanupKeys.length,
-        finalUsage: `${(finalQuotaInfo.percentageUsed * 100).toFixed(1)}%`
-      })
-
-    } catch (error) {
-      log.error('Emergency cleanup failed', {
-        error: error instanceof Error ? error.message : 'Unknown error'
-      })
-    }
-  }
 
   /**
    * Preprocess data to limit sizes and sanitize error objects
@@ -522,20 +267,54 @@ export class StorageManager {
 
   /**
    * Sanitize storage keys for security
+   * Security: Prevents prototype pollution attacks by blocking dangerous key patterns
+   * that could modify Object.prototype or other built-in prototypes
    */
   private sanitizeKeys(data: Record<string, any>): Record<string, any> {
     const sanitized: Record<string, any> = {}
 
+    // Comprehensive regex patterns for dangerous key names
+    // Matches: __proto__, __defineGetter__, __defineSetter__, __lookupGetter__, __lookupSetter__
+    // Also matches: constructor, prototype (in any case), and variations with brackets
+    const dangerousKeyPatterns = [
+      /^__proto__$/i,
+      /^__define(Getter|Setter)__$/i,
+      /^__lookup(Getter|Setter)__$/i,
+      /^constructor$/i,
+      /^prototype$/i,
+      /\[(__proto__|constructor|prototype)\]/i,
+      /\.__proto__/i,
+      /\.constructor/i,
+      /\.prototype/i
+    ]
+
     for (const [key, value] of Object.entries(data)) {
-      // Validate key
+      // Validate key type and length
       if (typeof key !== 'string' || key.length === 0 || key.length > 100) {
-        log.warn('Invalid storage key skipped', { key })
+        log.warn('Invalid storage key skipped - invalid type or length', { key: String(key).substring(0, 50) })
         continue
       }
 
-      // Check for dangerous key names
-      if (key.startsWith('__') || key.includes('proto') || key.includes('constructor')) {
-        log.warn('Potentially dangerous storage key skipped', { key })
+      // Check against all dangerous patterns
+      let isDangerous = false
+      for (const pattern of dangerousKeyPatterns) {
+        if (pattern.test(key)) {
+          log.warn('Potentially dangerous storage key blocked', {
+            key: key.substring(0, 50),
+            reason: 'prototype pollution prevention'
+          })
+          isDangerous = true
+          break
+        }
+      }
+
+      if (isDangerous) {
+        continue
+      }
+
+      // Additional check: keys starting with __ are suspicious
+      if (key.startsWith('__')) {
+        log.warn('Potentially dangerous storage key blocked - double underscore prefix', { key: key.substring(0, 50) })
         continue
       }
 
@@ -574,14 +353,5 @@ export class StorageManager {
 // Export singleton instance
 export const storageManager = StorageManager.getInstance()
 
-// Export utility functions
-export const {
-  getQuotaInfo,
-  validateStorageOperation,
-  safeSet,
-  safeGet,
-  safeRemove,
-  clearStorage,
-  cleanupStorage,
-  emergencyCleanup
-} = storageManager
+// Export core storage functions
+export const { safeSet, safeGet, safeRemove } = storageManager

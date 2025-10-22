@@ -56,14 +56,14 @@ export function MultiSheetExporter({
   onExportComplete,
   onExportError
 }: MultiSheetExporterProps) {
-  const [sheets, setSheets] = useState<SheetConfig[]>(() => 
+  const [sheets, setSheets] = useState<SheetConfig[]>(() =>
     initialSheets.map((sheet, index) => ({
       id: `sheet-${Date.now()}-${index}`,
-      name: sheet.name || `Sheet ${index + 1}`,
-      entityType: sheet.entityType || 'issue',
+      name: sheet.name ?? `Sheet ${index + 1}`,
+      entityType: sheet.entityType ?? 'issue',
       enabled: sheet.enabled ?? true,
-      filters: sheet.filters || {},
-      fieldMappings: sheet.fieldMappings || [],
+      filters: sheet.filters ?? {},
+      fieldMappings: sheet.fieldMappings ?? [],
       estimatedRows: 0
     }))
   )
@@ -212,7 +212,7 @@ export function MultiSheetExporter({
           case 'issue':
             // For demo purposes, fetch a sample of issues
             const issuesResponse = await issuesService.getIssues({}, { limit: 100, offset: 0 })
-            data = issuesResponse.data || []
+            data = issuesResponse.data ?? []
             break
             
           case 'workflow':
@@ -317,7 +317,7 @@ export function MultiSheetExporter({
   }, [sheets, globalOptions, onExportStart, onExportComplete, onExportError, log])
 
   const enabledSheets = sheets.filter(s => s.enabled)
-  const totalEstimatedRows = enabledSheets.reduce((sum, sheet) => sum + (sheet.estimatedRows || 0), 0)
+  const totalEstimatedRows = enabledSheets.reduce((sum, sheet) => sum + (sheet.estimatedRows ?? 0), 0)
 
   return (
     <div className={clsx('space-y-6', className)}>
@@ -450,7 +450,7 @@ export function MultiSheetExporter({
                         className="font-medium text-gray-900 bg-transparent border-none focus:ring-2 focus:ring-blue-500 focus:bg-white rounded px-1"
                       />
                       <p className="text-xs text-gray-500">
-                        {sheet.entityType} • {sheet.estimatedRows || 0} estimated rows
+                        {sheet.entityType} • {sheet.estimatedRows ?? 0} estimated rows
                       </p>
                     </div>
                   </div>

@@ -151,7 +151,7 @@ export function LogzExplorer({ className }: LogzExplorerProps) {
     }
 
     return (
-      <Tag color={colorMap[operation] || 'default'} className="text-xs">
+      <Tag color={colorMap[operation] ?? 'default'} className="text-xs">
         {operation}
       </Tag>
     )
@@ -215,7 +215,7 @@ export function LogzExplorer({ className }: LogzExplorerProps) {
         filterFn: 'arrIncludes',
         cell: ({ getValue, row }) => {
           const text = getValue()
-          const actorType = (row.original as ParsedLogEntry & { actorType?: string }).actorType || ''
+          const actorType = (row.original as ParsedLogEntry & { actorType?: string }).actorType ?? ''
           const colorMap: Record<string, string> = {
             'user': 'blue',
             'hiddenuser': 'purple',
@@ -229,11 +229,11 @@ export function LogzExplorer({ className }: LogzExplorerProps) {
           return (
             <div className="flex items-center gap-1">
               <Tag
-                color={colorMap[actorType] || 'default'}
+                color={colorMap[actorType] ?? 'default'}
                 className="text-xs"
                 style={{ border: 'none', margin: 0, padding: '2px 6px' }}
               >
-                {actorType || 'unknown'}
+                {actorType ?? 'unknown'}
               </Tag>
               <Tooltip title={text}>
                 <span className="text-xs truncate max-w-[160px]">{text}</span>
@@ -299,7 +299,7 @@ export function LogzExplorer({ className }: LogzExplorerProps) {
   }, [query.hasMore, query.isFetching, loadMore])
 
   return (
-    <div className={`space-y-6 ${className || ''}`}>
+    <div className={`space-y-6 ${className ?? ''}`}>
       {/* Standard ToolHeader */}
       <ToolHeader title="Logz Explorer" icon={Activity}>
         {/* Filter Controls */}
@@ -416,8 +416,8 @@ export function LogzExplorer({ className }: LogzExplorerProps) {
           <div className="space-y-4">
             {(logs.length > 0 || query.hasMore) && (
               <SmartPagination
-                currentOffset={query.currentOffset || 0}
-                recordsPerPull={query.recordsPerPull || 100}
+                currentOffset={query.currentOffset ?? 0}
+                recordsPerPull={query.recordsPerPull ?? 100}
                 totalLoaded={logs.length}
                 hasMore={query.hasMore}
                 isLoading={query.isFetching}

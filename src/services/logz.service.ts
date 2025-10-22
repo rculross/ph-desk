@@ -182,7 +182,7 @@ export function buildLogsUrl(apiParams: LogsApiParams, tenantSlug: string): stri
 
   // 7. tzOffset (ALWAYS REQUIRED - must be seventh)
   // Note: Planhat expects tzOffset parameter even if 0
-  const tzOffset = apiParams.tzOffset || 0
+  const tzOffset = apiParams.tzOffset ?? 0
   urlParts.push(`tzOffset=${tzOffset}`)
 
   // 8. tenantSlug (ALWAYS REQUIRED - must be last)
@@ -206,7 +206,7 @@ export function buildLogsUrl(apiParams: LogsApiParams, tenantSlug: string): stri
  */
 function generateLogId(log: RawLogEntry): string {
   const timestamp = typeof log.timestamp === 'object' ? log.timestamp.value : log.timestamp
-  const hash = btoa(`${log.eventId || ''}_${timestamp}_${log.model}_${log.operation}`).slice(0, 8)
+  const hash = btoa(`${log.eventId ?? ''}_${timestamp}_${log.model}_${log.operation}`).slice(0, 8)
   return `log_${timestamp.replace(/[^\d]/g, '').slice(-10)}_${hash}`
 }
 
@@ -234,7 +234,7 @@ export function resolveActorDisplay(log: RawLogEntry, resolvedUser?: UserEntity)
 
   // 3. Use context actor name if available and not "Unknown"
   try {
-    const parsedContext = JSON.parse(log.context || '{}')
+    const parsedContext = JSON.parse(log.context ?? '{}')
     if (parsedContext.actor?.name && parsedContext.actor.name !== 'Unknown') {
       return parsedContext.actor.name
     }
@@ -270,9 +270,9 @@ export function resolveCompanyDisplay(
       // Special formatting for Issue model with multiple companies
       let displayName: string
       if (log.model === 'Issue' && companyIds.length > 1) {
-        displayName = `${companyNames[0] || 'Unknown'} +${companyNames.length - 1} more`
+        displayName = `${companyNames[0] ?? 'Unknown'} +${companyNames.length - 1} more`
       } else {
-        displayName = companyNames[0] || 'Unknown'
+        displayName = companyNames[0] ?? 'Unknown'
       }
 
       return {
@@ -285,7 +285,7 @@ export function resolveCompanyDisplay(
 
   // Fallback to context or "Unknown"
   try {
-    const parsedContext = JSON.parse(log.context || '{}')
+    const parsedContext = JSON.parse(log.context ?? '{}')
     if (parsedContext.companyName) {
       return {
         companyDisplay: parsedContext.companyName,
@@ -330,15 +330,15 @@ export function transformLogWithResolution(
     operation: log.operation,
     actorDisplay: resolveActorDisplay(log, resolvedUser),
     companyDisplay: companyResolution.companyDisplay,
-    entityId: log.entityId || '',
+    entityId: log.entityId ?? '',
     companyIds: companyResolution.companyIds,
     companyNames: companyResolution.companyNames,
     parsedContext,
 
     // Legacy compatibility fields
     objectType: log.model,
-    actor: log.actorId || log.actorType,
-    company: companyResolution.companyIds[0] || companyResolution.companyDisplay,
+    actor: log.actorId ?? log.actorType,
+    company: companyResolution.companyIds[0] ?? companyResolution.companyDisplay,
     action: log.operation,
 
     _raw: log

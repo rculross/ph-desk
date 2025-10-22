@@ -234,7 +234,7 @@ describe('useTableCore Cache Invalidation Tests', () => {
     // Setup storage with data for multiple tenants
     mockStorageManager.safeGet.mockImplementation(async (keys) => {
       const result: Record<string, any> = {}
-      for (const key of keys || []) {
+      for (const key of keys ?? []) {
         if (key === 'table-column-widths-companies-tenant-a') {
           result[key] = { id: 100, name: 200 }
         } else if (key === 'table-column-widths-companies-tenant-b') {

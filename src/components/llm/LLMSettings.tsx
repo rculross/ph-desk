@@ -158,7 +158,7 @@ export const LLMSettings: React.FC = () => {
 
   const loadModelPreferences = async () => {
     try {
-      const savedPreferences = await chrome.storage.local.get(['llm-model-preferences'])
+      const savedPreferences = await window.electron.storage.get(['llm-model-preferences'])
       log.debug('Loaded model preferences', { savedPreferences })
     } catch (error) {
       log.error('Failed to load model preferences', { error })
@@ -188,9 +188,9 @@ export const LLMSettings: React.FC = () => {
           const availableModels = await llmService.fetchAvailableModels(provider.provider, apiKey)
 
           // Get saved preferences for this provider
-          const savedPreferences = await chrome.storage.local.get(['llm-model-preferences'])
-          const allPreferences = savedPreferences['llm-model-preferences'] || {}
-          const providerPreferences = allPreferences[provider.provider] || {}
+          const savedPreferences = await window.electron.storage.get(['llm-model-preferences'])
+          const allPreferences = savedPreferences['llm-model-preferences'] ?? {}
+          const providerPreferences = allPreferences[provider.provider] ?? {}
 
           // Add models with enabled status
           for (const model of availableModels) {
@@ -228,12 +228,12 @@ export const LLMSettings: React.FC = () => {
       ))
 
       // Save to storage
-      const currentPreferences = await chrome.storage.local.get(['llm-model-preferences'])
-      const allPreferences = currentPreferences['llm-model-preferences'] || {}
-      const providerPreferences = allPreferences[provider] || {}
+      const currentPreferences = await window.electron.storage.get(['llm-model-preferences'])
+      const allPreferences = currentPreferences['llm-model-preferences'] ?? {}
+      const providerPreferences = allPreferences[provider] ?? {}
       providerPreferences[modelId] = enabled
 
-      await chrome.storage.local.set({
+      await window.electron.storage.set({
         'llm-model-preferences': {
           ...allPreferences,
           [provider]: providerPreferences
@@ -477,9 +477,9 @@ export const LLMSettings: React.FC = () => {
 
   // Calculate overall stats
   const totalUsage = providers.reduce((acc, p) => ({
-    requests: acc.requests + (p.usage?.requests || 0),
-    tokens: acc.tokens + (p.usage?.tokens || 0),
-    cost: acc.cost + (p.usage?.cost || 0)
+    requests: acc.requests + (p.usage?.requests ?? 0),
+    tokens: acc.tokens + (p.usage?.tokens ?? 0),
+    cost: acc.cost + (p.usage?.cost ?? 0)
   }), { requests: 0, tokens: 0, cost: 0 })
 
   const activeProviders = providers.filter(p => p.hasApiKey && p.isEnabled).length

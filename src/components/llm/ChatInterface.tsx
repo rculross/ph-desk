@@ -150,7 +150,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         temperature,
         maxTokens,
         stream: true,
-        systemPrompt: systemPrompt || undefined
+        systemPrompt: systemPrompt ?? undefined
       }
 
       // Start streaming response

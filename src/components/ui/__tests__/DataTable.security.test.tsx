@@ -288,7 +288,10 @@ describe('DataTable Security Tests', () => {
     const columns: ColumnDef<any>[] = [{
       accessorKey: 'content',
       header: 'Content',
-      cell: ({ getValue }) => <div>{getValue()}</div>
+      cell: ({ getValue }) => {
+        const value = getValue()
+        return <div>{String(value)}</div>
+      }
     }]
 
     const TestTable = () => {

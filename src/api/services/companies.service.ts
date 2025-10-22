@@ -150,9 +150,9 @@ class CompaniesService {
 
     try {
       const params = {
-        limit: pagination?.limit || 500,
-        offset: pagination?.offset || 0,
-        sort: pagination?.sort || 'name',
+        limit: pagination?.limit ?? 500,
+        offset: pagination?.offset ?? 0,
+        sort: pagination?.sort ?? 'name',
         sortOrder: pagination?.sortOrder,
         ...filters
       }
@@ -165,18 +165,18 @@ class CompaniesService {
         params,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
 
       // Companies endpoint returns paginated response
-      return response || {
+      return response ?? {
         data: [],
         total: 0,
-        limit: pagination?.limit || 500,
-        offset: pagination?.offset || 0,
+        limit: pagination?.limit ?? 500,
+        offset: pagination?.offset ?? 0,
         hasMore: false
       }
     } catch (error) {
@@ -198,12 +198,12 @@ class CompaniesService {
         undefined,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
-      return response.data || null
+      return response.data ?? null
     } catch (error) {
       log.error('Failed to get company by ID:', error)
       return null
@@ -223,12 +223,12 @@ class CompaniesService {
         undefined,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
-      return response.data || null
+      return response.data ?? null
     } catch (error) {
       log.error('Failed to get company by slug:', error)
       return null
@@ -248,8 +248,8 @@ class CompaniesService {
         companyData,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
@@ -278,8 +278,8 @@ class CompaniesService {
         updates,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
@@ -307,8 +307,8 @@ class CompaniesService {
         `/companies/${companyId}`,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
@@ -351,14 +351,14 @@ class CompaniesService {
         undefined,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
 
       return (
-        response.data || {
+        response.data ?? {
           total: 0,
           byStatus: {} as Record<CompanyStatus, number>,
           bySize: {} as Record<CompanySize, number>,
@@ -392,12 +392,12 @@ class CompaniesService {
         undefined,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
-      return response.data || null
+      return response.data ?? null
     } catch (error) {
       log.error('Failed to get company health:', error)
       return null
@@ -417,8 +417,8 @@ class CompaniesService {
         undefined,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
@@ -464,14 +464,14 @@ class CompaniesService {
         undefined,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
 
       return (
-        response.data || {
+        response.data ?? {
           companyId,
           activities: [],
           summary: {
@@ -521,18 +521,18 @@ class CompaniesService {
         undefined,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
 
       return (
-        response.data || {
+        response.data ?? {
           data: [],
           total: 0,
-          limit: pagination?.limit || 2000,
-          offset: pagination?.offset || 0,
+          limit: pagination?.limit ?? 2000,
+          offset: pagination?.offset ?? 0,
           hasMore: false
         }
       )
@@ -555,14 +555,14 @@ class CompaniesService {
         undefined,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
 
       return (
-        response.data || {
+        response.data ?? {
           companyId,
           integrations: [],
           totalIntegrations: 0,
@@ -593,8 +593,8 @@ class CompaniesService {
         integration,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
@@ -628,8 +628,8 @@ class CompaniesService {
         updates,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
@@ -657,8 +657,8 @@ class CompaniesService {
         `/companies/${companyId}/integrations/${integrationId}`,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
@@ -690,14 +690,14 @@ class CompaniesService {
         undefined,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
 
       return (
-        response.data || {
+        response.data ?? {
           success: false,
           message: 'Sync failed',
           lastSync: new Date().toISOString()
@@ -725,8 +725,8 @@ class CompaniesService {
         },
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
@@ -758,8 +758,8 @@ class CompaniesService {
         },
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
@@ -792,14 +792,14 @@ class CompaniesService {
         operation,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
 
       return (
-        response.data || {
+        response.data ?? {
           success: 0,
           failed: operation.companyIds.length,
           errors: ['Bulk operation failed']
@@ -836,18 +836,18 @@ class CompaniesService {
         searchRequest,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
 
       return (
-        response.data || {
+        response.data ?? {
           data: [],
           total: 0,
-          limit: pagination?.limit || 2000,
-          offset: pagination?.offset || 0,
+          limit: pagination?.limit ?? 2000,
+          offset: pagination?.offset ?? 0,
           hasMore: false
         }
       )
@@ -958,8 +958,8 @@ class CompaniesService {
         filters,
         onProgress: options?.onProgress,
         maxRecords: options?.maxRecords,
-        priority: options?.priority || 'normal',
-        complexity: options?.complexity || 'moderate'
+        priority: options?.priority ?? 'normal',
+        complexity: options?.complexity ?? 'moderate'
       })
 
       return result.data

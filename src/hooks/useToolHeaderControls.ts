@@ -227,7 +227,7 @@ export function useComplexControl<T>(config: {
     config.initialLoading,
     config.onLoadingChange
   )
-  const badgeControl = useBadgeControl(config.badgeItems || [])
+  const badgeControl = useBadgeControl(config.badgeItems ?? [])
 
   // Memoize combined props for performance
   const combinedProps = useMemo(() => ({

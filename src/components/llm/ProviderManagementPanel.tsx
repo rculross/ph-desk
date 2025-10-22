@@ -196,7 +196,7 @@ export const ProviderManagementPanel: React.FC<ProviderManagementPanelProps> = (
           <div>
             <div className="font-medium">{name}</div>
             <div className="text-xs text-gray-500">
-              {record.selectedModel || 'No model selected'}
+              {record.selectedModel ?? 'No model selected'}
             </div>
           </div>
         </div>

@@ -105,8 +105,8 @@ class UsersService {
         params,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
@@ -150,8 +150,8 @@ class UsersService {
         undefined,
         {
           metadata: {
-            priority: options?.priority || 'normal',
-            complexity: options?.complexity || 'moderate'
+            priority: options?.priority ?? 'normal',
+            complexity: options?.complexity ?? 'moderate'
           }
         }
       )
@@ -230,8 +230,8 @@ class UsersService {
     return {
       data: filteredUsers,
       total: filteredUsers.length,
-      limit: pagination?.limit || 500,
-      offset: pagination?.offset || 0,
+      limit: pagination?.limit ?? 500,
+      offset: pagination?.offset ?? 0,
       hasMore: false
     }
   }

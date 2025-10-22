@@ -3,6 +3,14 @@
  *
  * Modern table implementation using TanStack Table with proper architecture.
  * Combines our custom components while following best practices.
+ *
+ * Persistence Features:
+ * - Column widths: User-adjusted sizes saved per tenant
+ * - Column order: Drag-and-drop arrangement saved per tenant
+ * - Column visibility: Show/hide preferences saved per tenant
+ *
+ * All persistence features are automatically enabled when both entityType
+ * and tenantSlug props are provided.
  */
 
 import React, { useMemo, useCallback, useEffect, useRef } from 'react'
@@ -32,9 +40,9 @@ export interface TableProps<TData> extends Omit<UseTableCoreOptions<TData>, 'col
   entityType?: EntityType
   customColumns?: ColumnDef<TData>[]
 
-  // Persistence
-  tenantSlug?: string
-  enablePersistence?: boolean
+  // Persistence - enables column widths, order, and visibility persistence per tenant
+  tenantSlug?: string          // Required for tenant-specific persistence
+  enablePersistence?: boolean  // Master switch (default: true when tenantSlug provided)
 
   // Table display
   height?: number
@@ -51,9 +59,9 @@ export interface TableProps<TData> extends Omit<UseTableCoreOptions<TData>, 'col
   // Column sizing
   customColumnSizing?: Record<string, number>
 
-  // Column persistence (new simplified options)
-  persistColumnSizes?: boolean
-  persistenceContext?: string
+  // Column persistence (simplified options - rarely needed, use enablePersistence instead)
+  persistColumnSizes?: boolean    // Override to disable width persistence
+  persistenceContext?: string     // Legacy persistence context
 
   // Virtualization options
   enableRowVirtualization?: boolean
@@ -188,7 +196,7 @@ export function Table<TData>({
   const initialSizing = useMemo(() => {
     return {
       ...customColumnSizing,
-      ...(initialColumnSizing || {})
+      ...(initialColumnSizing ?? {})
     }
   }, [customColumnSizing, initialColumnSizing])
 
@@ -232,6 +240,7 @@ export function Table<TData>({
     persistColumnSizes: persistColumnSizes && persistenceEnabled,
     persistenceContext: persistenceContext || (entityType ? `table-${entityType}` : 'table'),
     persistColumnOrder: persistenceEnabled,
+    persistColumnVisibility: persistenceEnabled,
     enablePersistence: persistenceEnabled,
     persistenceScope,
 

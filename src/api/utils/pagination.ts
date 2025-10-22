@@ -161,9 +161,9 @@ export async function fetchAllPages<T>(
 
   const result: PaginationResult<T> = {
     data: results,
-    total: totalRecords || results.length,
+    total: totalRecords ?? results.length,
     pages,
-    hasMore: hasMore && results.length < (totalRecords || Infinity),
+    hasMore: hasMore && results.length < (totalRecords ?? Infinity),
     lastOffset: offset
   }
 
@@ -222,7 +222,7 @@ export async function fetchAllRecords<T>(
       ...filters,
       limit: pageLimit,
       offset,
-      sort: options.sort || config.defaultSort
+      sort: options.sort ?? config.defaultSort
     }
 
     // Add request options for rate limiting
@@ -242,8 +242,8 @@ export async function fetchAllRecords<T>(
           })
           // Issues endpoint returns array directly
           return {
-            data: response || [],
-            total: response?.length || 0,
+            data: response ?? [],
+            total: response?.length ?? 0,
             hasMore: response?.length === pageLimit
           }
 
@@ -253,9 +253,9 @@ export async function fetchAllRecords<T>(
           })
           // Companies endpoint returns paginated response
           return {
-            data: response?.data || [],
-            total: response?.total || 0,
-            hasMore: response?.hasMore || false
+            data: response?.data ?? [],
+            total: response?.total ?? 0,
+            hasMore: response?.hasMore ?? false
           }
 
         case 'workflows':
@@ -264,8 +264,8 @@ export async function fetchAllRecords<T>(
           })
           // Workflows endpoint returns array directly
           return {
-            data: response || [],
-            total: response?.length || 0,
+            data: response ?? [],
+            total: response?.length ?? 0,
             hasMore: response?.length === pageLimit
           }
 
@@ -275,8 +275,8 @@ export async function fetchAllRecords<T>(
           })
           // Tenants endpoint returns array directly
           return {
-            data: response || [],
-            total: response?.length || 0,
+            data: response ?? [],
+            total: response?.length ?? 0,
             hasMore: false // Tenants are not paginated
           }
 

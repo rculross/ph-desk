@@ -250,8 +250,8 @@ export function useSalesforceIntegration(
 
   // Last update timestamp
   const dataUpdatedAt = Math.max(
-    configQuery.dataUpdatedAt || 0,
-    processedQuery.dataUpdatedAt || 0
+    configQuery.dataUpdatedAt ?? 0,
+    processedQuery.dataUpdatedAt ?? 0
   )
 
   return {

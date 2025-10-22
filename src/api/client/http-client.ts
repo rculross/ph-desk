@@ -5,7 +5,7 @@
  * Maintains all existing functionality: rate limiting, tenant management, validation
  */
 
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
+import axios, { AxiosInstance, AxiosRequestConfig } from 'axios'
 
 import { logger } from '../../utils/logger'
 import { apiConfig, getBaseURL, getStandardHeaders, getTimeoutConfig } from '../config/index'
@@ -52,8 +52,8 @@ export class HttpClient {
    */
   private createAxiosInstance(): AxiosInstance {
     return axios.create({
-      baseURL: this.options.baseURL || getBaseURL(),
-      timeout: this.options.timeout || getTimeoutConfig('default'),
+      baseURL: this.options.baseURL ?? getBaseURL(),
+      timeout: this.options.timeout ?? getTimeoutConfig('default'),
       headers: getStandardHeaders(),
       withCredentials: this.options.withCredentials ?? apiConfig.withCredentials,
       paramsSerializer: {
@@ -65,7 +65,7 @@ export class HttpClient {
   /**
    * Serialize query parameters (handles arrays and nested objects)
    */
-  private serializeParams(params: any): string {
+  private serializeParams(params: Record<string, unknown>): string {
     if (!params) return ''
 
     const searchParams = new URLSearchParams()
@@ -96,7 +96,7 @@ export class HttpClient {
     if (this.options.enableRateLimit) {
       this.axiosInstance.interceptors.request.use(
         async (config) => {
-          const requestOptions = (config as any).metadata as RequestOptions | undefined
+          const requestOptions = (config as AxiosRequestConfig & { metadata?: RequestOptions }).metadata
 
           if (!requestOptions?.skipRateLimit) {
             try {
@@ -161,7 +161,7 @@ export class HttpClient {
                                    (error.response?.status === 400 || error.response?.status === 401)
 
         if (!isConnectivityCheck) {
-          log.debug(`API request failed: ${error.config?.method?.toUpperCase()} ${error.config?.url} - ${error.response?.status || 'Network Error'}`)
+          log.debug(`API request failed: ${error.config?.method?.toUpperCase()} ${error.config?.url} - ${error.response?.status ?? 'Network Error'}`)
         }
 
         // Handle 401 Unauthorized - session expired
@@ -169,9 +169,15 @@ export class HttpClient {
           log.warn('[HTTP] Received 401 Unauthorized - session may have expired')
 
           // Notify auth service if available (Electron environment)
-          if (typeof window !== 'undefined' && (window as any).authService) {
+          interface WindowWithAuthService extends Window {
+            authService?: {
+              handleUnauthorized: () => Promise<void>
+            }
+          }
+
+          if (typeof window !== 'undefined' && (window as WindowWithAuthService).authService) {
             try {
-              await (window as any).authService.handleUnauthorized()
+              await (window as WindowWithAuthService).authService.handleUnauthorized()
             } catch (authError) {
               log.error('[HTTP] Error handling unauthorized response', { error: authError })
             }
@@ -209,9 +215,9 @@ export class HttpClient {
   /**
    * GET request
    */
-  async get<T = any>(
+  async get<T = unknown>(
     url: string,
-    params?: any,
+    params?: Record<string, unknown>,
     config?: AxiosRequestConfig & { metadata?: RequestOptions }
   ): Promise<T> {
     const response = await this.axiosInstance.get<T>(url, {
@@ -224,9 +230,9 @@ export class HttpClient {
   /**
    * POST request
    */
-  async post<T = any>(
+  async post<T = unknown>(
     url: string,
-    data?: any,
+    data?: unknown,
     config?: AxiosRequestConfig & { metadata?: RequestOptions }
   ): Promise<T> {
     // Ensure headers are properly merged
@@ -246,9 +252,9 @@ export class HttpClient {
   /**
    * PATCH request
    */
-  async patch<T = any>(
+  async patch<T = unknown>(
     url: string,
-    data?: any,
+    data?: unknown,
     config?: AxiosRequestConfig & { metadata?: RequestOptions }
   ): Promise<T> {
     const response = await this.axiosInstance.patch<T>(url, data, config)
@@ -258,7 +264,7 @@ export class HttpClient {
   /**
    * DELETE request
    */
-  async delete<T = any>(
+  async delete<T = unknown>(
     url: string,
     config?: AxiosRequestConfig & { metadata?: RequestOptions }
   ): Promise<T> {
@@ -269,9 +275,9 @@ export class HttpClient {
   /**
    * PUT request
    */
-  async put<T = any>(
+  async put<T = unknown>(
     url: string,
-    data?: any,
+    data?: unknown,
     config?: AxiosRequestConfig & { metadata?: RequestOptions }
   ): Promise<T> {
     const response = await this.axiosInstance.put<T>(url, data, config)

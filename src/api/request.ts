@@ -116,7 +116,7 @@ export async function sendValidatedRequest<T = any>(
     complexity = 'simple',
     skipRateLimit = false,
     clientType
-  } = options || {}
+  } = options ?? {}
 
   let payload = data
 

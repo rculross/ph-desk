@@ -38,8 +38,8 @@ export function useEndpointHistory() {
   const loadHistory = useCallback(async () => {
     try {
       setIsLoading(true)
-      const result = await chrome.storage.local.get([HISTORY_KEY])
-      const storedHistory: StoredHistoryItem[] = result[HISTORY_KEY] || []
+      const result = await window.electron.storage.get([HISTORY_KEY])
+      const storedHistory: StoredHistoryItem[] = result[HISTORY_KEY] ?? []
 
       // Convert to display format and sort by timestamp (newest first)
       const historyItems: HistoryItem[] = storedHistory
@@ -72,8 +72,8 @@ export function useEndpointHistory() {
     if (!endpoint.trim()) return
 
     try {
-      const result = await chrome.storage.local.get([HISTORY_KEY])
-      const storedHistory: StoredHistoryItem[] = result[HISTORY_KEY] || []
+      const result = await window.electron.storage.get([HISTORY_KEY])
+      const storedHistory: StoredHistoryItem[] = result[HISTORY_KEY] ?? []
 
       // Remove existing entry with same endpoint and method (for deduplication)
       const filteredHistory = storedHistory.filter(
@@ -90,7 +90,7 @@ export function useEndpointHistory() {
       const updatedHistory = [newItem, ...filteredHistory].slice(0, MAX_HISTORY_ITEMS)
 
       // Save back to storage
-      await chrome.storage.local.set({ [HISTORY_KEY]: updatedHistory })
+      await window.electron.storage.set({ [HISTORY_KEY]: updatedHistory })
 
       // Reload the display history
       await loadHistory()
@@ -112,7 +112,7 @@ export function useEndpointHistory() {
   // Clear all history
   const clearHistory = useCallback(async () => {
     try {
-      await chrome.storage.local.remove([HISTORY_KEY])
+      await window.electron.storage.remove([HISTORY_KEY])
       setHistory([])
 
       log.info('Endpoint history cleared')

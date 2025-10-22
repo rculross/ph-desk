@@ -56,8 +56,8 @@ export function validateRequest<T>(
 
     if (!result.success) {
       const firstIssue = result.error.issues[0]
-      const field = firstIssue?.path.join('.') || 'unknown'
-      const message = `Validation failed${context ? ` for ${context}` : ''}: ${firstIssue?.message || 'Invalid data'}`
+      const field = firstIssue?.path.join('.') ?? 'unknown'
+      const message = `Validation failed${context ? ` for ${context}` : ''}: ${firstIssue?.message ?? 'Invalid data'}`
 
       log.warn('Request validation failed', {
         context,
@@ -77,7 +77,7 @@ export function validateRequest<T>(
     if (process.env.NODE_ENV === 'development') {
       log.debug('Request validation passed', {
         context,
-        schema: (schema._def as any).typeName || 'unknown'
+        schema: (schema._def as any).typeName ?? 'unknown'
       })
     }
 
@@ -115,8 +115,8 @@ export function validateResponse<T>(
 
     if (!result.success) {
       const firstIssue = result.error.issues[0]
-      const field = firstIssue?.path.join('.') || 'unknown'
-      const message = `Response validation failed${endpoint ? ` for ${endpoint}` : ''}: ${firstIssue?.message || 'Invalid response data'}`
+      const field = firstIssue?.path.join('.') ?? 'unknown'
+      const message = `Response validation failed${endpoint ? ` for ${endpoint}` : ''}: ${firstIssue?.message ?? 'Invalid response data'}`
 
       log.error('Response validation failed', {
         endpoint,
@@ -136,7 +136,7 @@ export function validateResponse<T>(
     if (process.env.NODE_ENV === 'development') {
       log.debug('Response validation passed', {
         endpoint,
-        schema: (schema._def as any).typeName || 'unknown'
+        schema: (schema._def as any).typeName ?? 'unknown'
       })
     }
 
@@ -261,7 +261,7 @@ export function validateFilters<T>(schema: z.ZodSchema<T>, filters: unknown, con
     )
   }
 
-  const result = validateRequest(schema, filters, context || 'filters')
+  const result = validateRequest(schema, filters, context ?? 'filters')
   return result.success ? result.data! : ({} as T)
 }
 

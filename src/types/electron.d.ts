@@ -102,10 +102,36 @@ export interface ElectronAuth {
    * @returns Promise resolving to authentication status
    */
   isAuthenticated(): Promise<boolean>;
+
+  /**
+   * Save last production tenant slug to persistent storage
+   * @param tenantSlug - Tenant slug to save
+   * @returns Promise that resolves when tenant slug is saved
+   */
+  saveLastProdTenant(tenantSlug: string): Promise<void>;
+
+  /**
+   * Logout and clear session
+   * @returns Promise that resolves when logout is complete
+   */
+  logout(): Promise<void>;
 }
+
+// Preferences are now managed by electron-preferences library
+// Access via File -> Preferences menu (Cmd+,)
+// No renderer process API needed - preferences handled by native dialog
 
 export interface ElectronFiles {
   // Placeholder for future file system APIs (Phase 5)
+}
+
+export interface ElectronWindow {
+  /**
+   * Set window title
+   * @param title - New window title
+   * @returns Promise that resolves when title is set
+   */
+  setTitle(title: string): Promise<void>;
 }
 
 export interface ElectronAPI {
@@ -113,6 +139,7 @@ export interface ElectronAPI {
   storage: ElectronStorage;
   auth: ElectronAuth;
   files: ElectronFiles;
+  window: ElectronWindow;
 }
 
 declare global {
@@ -121,4 +148,4 @@ declare global {
   }
 }
 
-export {};
+export {}

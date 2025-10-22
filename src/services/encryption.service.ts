@@ -300,7 +300,7 @@ class EncryptionService {
       return bytes.buffer
     } catch (error) {
       log.error('Base64 to ArrayBuffer conversion failed', {
-        base64Length: base64.length || 0,
+        base64Length: base64.length ?? 0,
         error: error instanceof Error ? error.message : 'Unknown error'
       })
 

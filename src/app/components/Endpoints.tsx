@@ -14,6 +14,8 @@ import {
   ReloadOutlined
 } from '@ant-design/icons'
 import { Button, Input, Select, Modal, Upload } from 'antd'
+
+const { TextArea } = Input
 import { clsx } from 'clsx'
 import { format as formatDate } from 'date-fns'
 import { NetworkIcon } from 'lucide-react'
@@ -103,7 +105,7 @@ export function Endpoints({ className }: EndpointsProps) {
       lastUsed: new Date(ep.lastUsed).toISOString(),
       usageCount: ep.usageCount,
       hasSchema: !!ep.responseSchema,
-      source: ep.metadata?.source || 'manual'
+      source: ep.metadata?.source ?? 'manual'
     })),
     totalCount: endpoints.length,
     tenantSlug: tenantSlug ?? undefined,
@@ -331,7 +333,7 @@ export function Endpoints({ className }: EndpointsProps) {
           ...ep,
           lastUsed: new Date(ep.lastUsed).toISOString(),
           firstSeen: new Date(ep.firstSeen).toISOString(),
-          source: ep.metadata?.source || 'manual'
+          source: ep.metadata?.source ?? 'manual'
         }))}
         fieldMappings={endpointsFieldMappings}
         entityType="custom"
@@ -399,7 +401,7 @@ export function Endpoints({ className }: EndpointsProps) {
             </label>
             <TextArea
               value={importData}
-              onChange={(e) => setImportData(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setImportData(e.target.value)}
               placeholder="Paste JSON endpoint data here..."
               rows={12}
               className="font-mono text-sm"

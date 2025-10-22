@@ -216,7 +216,7 @@ export const api = {
 
       return {
         timestamp: new Date().toISOString(),
-        environment: process.env.NODE_ENV || 'development',
+        environment: process.env.NODE_ENV ?? 'development',
         authentication: {
           isAuthenticated,
           hasUser: !!user,
@@ -226,11 +226,11 @@ export const api = {
           hasTenant: !!tenant,
           tenantSlug: tenant?.slug,
           tenantName: tenant?.name,
-          features: tenant?.features.length || 0
+          features: tenant?.features.length ?? 0
         },
         cache: queryUtils.getCacheStats(),
         httpClient: {
-          baseURL: getHttpClient().getAxiosInstance().defaults.baseURL || 'https://api.planhat.com'
+          baseURL: getHttpClient().getAxiosInstance().defaults.baseURL ?? 'https://api.planhat.com'
         }
       }
     },
@@ -247,7 +247,7 @@ export const api = {
         onProgress?: (completed: number, total: number) => void
       }
     ) => {
-      const { batchSize = 5, delay = 100, onProgress } = options || {}
+      const { batchSize = 5, delay = 100, onProgress } = options ?? {}
 
       return new Promise<R[]>(async (resolve, reject) => {
         const results: R[] = []

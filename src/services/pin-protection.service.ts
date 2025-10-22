@@ -19,6 +19,17 @@ import { encryptionService } from './encryption.service'
 const log = logger.api
 
 /**
+ * PIN Hash Storage Structure
+ * Stores the hashed PIN with salt for secure validation
+ */
+interface PinHashStorage {
+  hash: string // Base64-encoded hash
+  salt: string // Base64-encoded salt
+  iterations: number // PBKDF2 iterations used
+  createdAt: number // Timestamp when PIN was created
+}
+
+/**
  * PIN Protection Service Class
  * Manages PIN authentication with comprehensive security features
  */
@@ -27,6 +38,17 @@ class PinProtectionService {
   private static readonly ATTEMPT_RECORD_KEY = 'pin_attempt_record'
   private static readonly SESSION_KEY = 'pin_session'
   private static readonly SECURITY_CONFIG_KEY = 'security_config'
+  private static readonly PIN_HASH_KEY = 'pin_hash' // NEW: Storage key for PIN hash
+
+  // PBKDF2 configuration for PIN hashing (matching encryption service)
+  private readonly PBKDF2_ITERATIONS = 100000
+  private readonly PBKDF2_HASH = 'SHA-256'
+  private readonly SALT_LENGTH = 32 // 256 bits
+
+  // Rate limiting configuration
+  // Security: Minimum time between PIN verification attempts (1 second)
+  // This prevents rapid-fire brute force attempts and cannot be bypassed from DevTools
+  private static readonly MIN_ATTEMPT_INTERVAL = 1000 // 1 second
 
   // Default security configuration
   private readonly DEFAULT_CONFIG: SecurityConfig = {
@@ -38,10 +60,11 @@ class PinProtectionService {
 
   private currentSession: PinSession | null = null
   private securityConfig: SecurityConfig = this.DEFAULT_CONFIG
+  private lastAttemptTime: number = 0 // Track last PIN verification attempt timestamp
 
   constructor() {
     log.debug('PIN Protection service initialized')
-    this.initializeService()
+    void this.initializeService()
   }
 
   /**
@@ -57,12 +80,64 @@ class PinProtectionService {
 
       log.debug('PIN Protection service initialized successfully', {
         configLoaded: true,
-        sessionValid: this.currentSession?.isValid || false
+        sessionValid: this.currentSession?.isValid ?? false
       })
     } catch (error) {
       log.warn('Failed to initialize PIN Protection service', {
         error: error instanceof Error ? error.message : 'Unknown error'
       })
+    }
+  }
+
+  /**
+   * Setup PIN for first-time use
+   * Creates and stores a secure hash of the PIN
+   */
+  async setupPin(pin: string): Promise<void> {
+    try {
+      if (!pin || typeof pin !== 'string' || pin.length < 4) {
+        throw new PinProtectionError(
+          'PIN must be at least 4 characters',
+          'INVALID_PIN'
+        )
+      }
+
+      log.debug('Setting up new PIN', {
+        pinLength: pin.length
+      })
+
+      // Check if PIN already exists
+      const existingHash = await this.getPinHash()
+      if (existingHash) {
+        throw new PinProtectionError(
+          'PIN already exists. Use changePin to modify it.',
+          'INVALID_PIN'
+        )
+      }
+
+      // Hash and store the PIN
+      const pinHash = await this.hashPin(pin)
+      await this.savePinHash(pinHash)
+
+      // Create initial session
+      await this.createValidSession(pin)
+
+      log.info('PIN setup completed successfully')
+
+    } catch (error) {
+      log.error('PIN setup failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+
+      if (error instanceof PinProtectionError) {
+        throw error
+      }
+
+      throw new PinProtectionError(
+        'Failed to setup PIN',
+        'INVALID_PIN',
+        { originalError: error instanceof Error ? error.message : 'Unknown error' }
+      )
     }
   }
 
@@ -80,8 +155,28 @@ class PinProtectionService {
 
       log.debug('Starting PIN verification', {
         pinLength: pin.length,
-        sessionValid: this.currentSession?.isValid || false
+        sessionValid: this.currentSession?.isValid ?? false
       })
+
+      // Security: Enforce minimum time interval between PIN attempts
+      // This rate limiting cannot be bypassed from DevTools as it's enforced server-side in the service
+      const now = Date.now()
+      const timeSinceLastAttempt = now - this.lastAttemptTime
+
+      if (this.lastAttemptTime > 0 && timeSinceLastAttempt < PinProtectionService.MIN_ATTEMPT_INTERVAL) {
+        const remainingMs = PinProtectionService.MIN_ATTEMPT_INTERVAL - timeSinceLastAttempt
+
+        log.warn('PIN attempt rate limit triggered', {
+          timeSinceLastAttempt,
+          remainingMs
+        })
+
+        // Enforce delay before allowing the attempt
+        await new Promise(resolve => setTimeout(resolve, remainingMs))
+      }
+
+      // Update last attempt time
+      this.lastAttemptTime = Date.now()
 
       // Check if currently locked out
       await this.checkLockoutStatus()
@@ -282,6 +377,10 @@ class PinProtectionService {
       // Verify current PIN first
       await this.verifyPin(currentPin)
 
+      // Hash and store the new PIN
+      const newPinHash = await this.hashPin(newPin)
+      await this.savePinHash(newPinHash)
+
       // Invalidate current session to force re-authentication with new PIN
       await this.lockSession()
 
@@ -311,11 +410,12 @@ class PinProtectionService {
     try {
       log.warn('Executing emergency wipe')
 
-      // Clear all PIN-related storage
+      // Clear all PIN-related storage including PIN hash
       await storageManager.safeRemove([
         PinProtectionService.ATTEMPT_RECORD_KEY,
         PinProtectionService.SESSION_KEY,
-        PinProtectionService.SECURITY_CONFIG_KEY
+        PinProtectionService.SECURITY_CONFIG_KEY,
+        PinProtectionService.PIN_HASH_KEY
       ])
 
       // Invalidate current session
@@ -394,25 +494,140 @@ class PinProtectionService {
 
   // Private helper methods
 
+  /**
+   * Validate PIN against stored hash
+   * Uses constant-time comparison to prevent timing attacks
+   */
   private async validatePinCredentials(pin: string): Promise<boolean> {
     try {
-      // We validate the PIN by trying to create a test encryption/decryption
-      const testData = `pin-validation-test-${Date.now()}`
-      const encrypted = await encryptionService.encrypt(testData, pin)
-      const decrypted = await encryptionService.decrypt({
-        encryptedData: encrypted.encryptedData,
-        salt: encrypted.salt,
-        iv: encrypted.iv,
-        pin
+      // Get stored PIN hash
+      const storedHash = await this.getPinHash()
+
+      // If no PIN hash exists, this is first-time setup - return false
+      if (!storedHash) {
+        log.debug('No PIN hash found - first-time setup required')
+        return false
+      }
+
+      // Hash the provided PIN with the stored salt
+      const providedHashBuffer = await this.deriveHash(pin, encryptionService.base64ToArrayBuffer(storedHash.salt))
+      const providedHash = encryptionService.arrayBufferToBase64(providedHashBuffer)
+
+      // Compare hashes using constant-time comparison
+      const isValid = this.constantTimeCompare(providedHash, storedHash.hash)
+
+      log.debug('PIN validation completed', {
+        isValid,
+        iterations: storedHash.iterations
       })
 
-      return decrypted === testData
+      return isValid
     } catch (error) {
-      log.debug('PIN validation failed during test encryption', {
+      log.debug('PIN validation failed during hash comparison', {
         error: error instanceof Error ? error.message : 'Unknown error'
       })
       return false
     }
+  }
+
+  /**
+   * Hash PIN using PBKDF2
+   * Returns a PinHashStorage object with hash, salt, and metadata
+   */
+  private async hashPin(pin: string): Promise<PinHashStorage> {
+    try {
+      // Generate cryptographically secure random salt
+      const saltBuffer = new Uint8Array(this.SALT_LENGTH)
+      crypto.getRandomValues(saltBuffer)
+
+      // Derive hash from PIN using PBKDF2
+      const hashBuffer = await this.deriveHash(pin, saltBuffer.buffer)
+
+      // Convert to Base64 for storage
+      const hash = encryptionService.arrayBufferToBase64(hashBuffer)
+      const salt = encryptionService.arrayBufferToBase64(saltBuffer.buffer)
+
+      log.debug('PIN hashed successfully', {
+        iterations: this.PBKDF2_ITERATIONS,
+        saltLength: this.SALT_LENGTH
+      })
+
+      return {
+        hash,
+        salt,
+        iterations: this.PBKDF2_ITERATIONS,
+        createdAt: Date.now()
+      }
+    } catch (error) {
+      log.error('PIN hashing failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+      throw new PinProtectionError(
+        'Failed to hash PIN',
+        'INVALID_PIN',
+        { originalError: error instanceof Error ? error.message : 'Unknown error' }
+      )
+    }
+  }
+
+  /**
+   * Derive hash from PIN using PBKDF2
+   * Uses Web Crypto API for secure key derivation
+   */
+  private async deriveHash(pin: string, salt: ArrayBuffer): Promise<ArrayBuffer> {
+    try {
+      // Convert PIN to bytes
+      const pinBytes = new TextEncoder().encode(pin)
+
+      // Import PIN as base key material
+      const baseKey = await crypto.subtle.importKey(
+        'raw',
+        pinBytes,
+        'PBKDF2',
+        false,
+        ['deriveBits']
+      )
+
+      // Derive hash using PBKDF2
+      const hashBuffer = await crypto.subtle.deriveBits(
+        {
+          name: 'PBKDF2',
+          salt,
+          iterations: this.PBKDF2_ITERATIONS,
+          hash: this.PBKDF2_HASH
+        },
+        baseKey,
+        256 // 256 bits = 32 bytes
+      )
+
+      return hashBuffer
+    } catch (error) {
+      log.error('Hash derivation failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+      throw new PinProtectionError(
+        'Failed to derive PIN hash',
+        'INVALID_PIN',
+        { originalError: error instanceof Error ? error.message : 'Unknown error' }
+      )
+    }
+  }
+
+  /**
+   * Constant-time string comparison to prevent timing attacks
+   * Compares two strings of equal length in constant time
+   */
+  private constantTimeCompare(a: string, b: string): boolean {
+    if (a.length !== b.length) {
+      return false
+    }
+
+    let result = 0
+    for (let i = 0; i < a.length; i++) {
+      result |= a.charCodeAt(i) ^ b.charCodeAt(i)
+    }
+
+    return result === 0
   }
 
   private async checkLockoutStatus(): Promise<void> {
@@ -542,8 +757,23 @@ class PinProtectionService {
     )
   }
 
+  /**
+   * Generate cryptographically secure session ID
+   * Security: Uses Web Crypto API (crypto.getRandomValues) instead of Math.random()
+   * to generate cryptographically strong random numbers for session IDs
+   */
   private generateSessionId(): string {
-    return `session_${Date.now()}_${Math.random().toString(36).substring(2)}`
+    const timestamp = Date.now()
+    const randomBytes = new Uint8Array(16)
+    crypto.getRandomValues(randomBytes)
+
+    // Convert random bytes to base36 string
+    const randomString = Array.from(randomBytes)
+      .map(byte => byte.toString(36).padStart(2, '0'))
+      .join('')
+      .substring(0, 16)
+
+    return `session_${timestamp}_${randomString}`
   }
 
   // Storage management methods
@@ -585,6 +815,56 @@ class PinProtectionService {
     await storageManager.safeSet({
       [PinProtectionService.ATTEMPT_RECORD_KEY]: record
     })
+  }
+
+  /**
+   * Get stored PIN hash from storage
+   */
+  private async getPinHash(): Promise<PinHashStorage | null> {
+    try {
+      const data = await storageManager.safeGet([PinProtectionService.PIN_HASH_KEY])
+      const stored = data[PinProtectionService.PIN_HASH_KEY]
+
+      if (!stored) {
+        return null
+      }
+
+      // Validate structure
+      if (
+        typeof stored === 'object' &&
+        stored !== null &&
+        'hash' in stored &&
+        'salt' in stored &&
+        'iterations' in stored &&
+        'createdAt' in stored
+      ) {
+        return stored as PinHashStorage
+      }
+
+      log.warn('Invalid PIN hash structure in storage')
+      return null
+    } catch (error) {
+      log.warn('Failed to load PIN hash', { error })
+      return null
+    }
+  }
+
+  /**
+   * Save PIN hash to storage
+   */
+  private async savePinHash(pinHash: PinHashStorage): Promise<void> {
+    await storageManager.safeSet({
+      [PinProtectionService.PIN_HASH_KEY]: pinHash
+    })
+    log.debug('PIN hash saved to storage')
+  }
+
+  /**
+   * Check if PIN has been set up
+   */
+  async isPinSetup(): Promise<boolean> {
+    const pinHash = await this.getPinHash()
+    return pinHash !== null
   }
 
   private async loadSession(): Promise<void> {

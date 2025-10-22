@@ -137,7 +137,7 @@ function SimpleTableFallback() {
       <thead>
         <tr>
           {columns.map(col => (
-            <th key={col.id || String((col as any).accessorKey)}>{String(col.header)}</th>
+            <th key={col.id ?? String((col as any).accessorKey)}>{String(col.header)}</th>
           ))}
         </tr>
       </thead>
@@ -340,11 +340,11 @@ describe('DataTable Error Boundary Tests', () => {
 
     // Should either render normally or show appropriate fallback
     const isNormalRender = document.querySelector('.overflow-hidden.rounded-lg.border')
-    const isFallbackRender = screen.queryByTestId('error-fallback-simple') ||
-                           screen.queryByTestId('error-fallback-virtualized') ||
+    const isFallbackRender = screen.queryByTestId('error-fallback-simple') ??
+                           screen.queryByTestId('error-fallback-virtualized') ??
                            screen.queryByTestId('error-fallback-minimal')
 
-    expect(isNormalRender || isFallbackRender).toBeTruthy()
+    expect(isNormalRender ?? isFallbackRender).toBeTruthy()
   })
 
   it('should handle getBoundingClientRect errors', () => {
@@ -476,8 +476,8 @@ describe('DataTable Error Boundary Tests', () => {
     expect(errorSpy).toHaveBeenCalled()
 
     // Should show appropriate fallback
-    const fallback = screen.queryByTestId('error-fallback-simple') ||
-                    screen.queryByTestId('error-fallback-virtualized') ||
+    const fallback = screen.queryByTestId('error-fallback-simple') ??
+                    screen.queryByTestId('error-fallback-virtualized') ??
                     screen.queryByTestId('error-fallback-minimal')
 
     expect(fallback).toBeInTheDocument()

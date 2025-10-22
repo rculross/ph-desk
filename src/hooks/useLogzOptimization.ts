@@ -96,7 +96,7 @@ export function useLogzOptimization({
 
   // Get current strategy
   const currentStrategy = useMemo(() => {
-    return strategies.find(s => s.type === strategy) || strategies[1]!
+    return strategies.find(s => s.type === strategy) ?? strategies[1]!
   }, [strategies, strategy])
 
   // Calculate optimization metrics

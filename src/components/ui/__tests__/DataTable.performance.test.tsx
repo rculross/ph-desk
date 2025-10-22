@@ -48,9 +48,9 @@ function generatePerformanceTestData(size: number): PerformanceTestRow[] {
     email: `user${i}@example-company-name-${Math.floor(i / 100)}.com`,
     company: `Company ${Math.floor(i / 50)}`.repeat(Math.floor(Math.random() * 3) + 1),
     value: Math.random() * 10000,
-    status: ['active', 'inactive', 'pending', 'suspended'][i % 4],
+    status: (['active', 'inactive', 'pending', 'suspended'][i % 4]) ?? 'active',
     date: new Date(2024, i % 12, (i % 28) + 1).toISOString(),
-    category: ['A', 'B', 'C', 'D', 'E'][i % 5],
+    category: (['A', 'B', 'C', 'D', 'E'][i % 5]) ?? 'A',
     description: `Description for item ${i}. `.repeat(Math.floor(Math.random() * 10) + 1),
     metadata: JSON.stringify({
       tags: [`tag${i % 10}`, `tag${(i + 1) % 10}`, `tag${(i + 2) % 10}`],
@@ -143,17 +143,17 @@ class PerformanceTracker {
   }
 
   getAverageTime(label: string): number {
-    const times = this.measurements.get(label) || []
+    const times = this.measurements.get(label) ?? []
     return times.length > 0 ? times.reduce((a, b) => a + b, 0) / times.length : 0
   }
 
   getMedianTime(label: string): number {
-    const times = this.measurements.get(label) || []
+    const times = this.measurements.get(label) ?? []
     if (times.length === 0) return 0
 
     const sorted = [...times].sort((a, b) => a - b)
     const mid = Math.floor(sorted.length / 2)
-    return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+    return sorted.length % 2 === 0 ? ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2 : (sorted[mid] ?? 0)
   }
 
   reset() {
@@ -232,12 +232,12 @@ describe('DataTable Performance Regression Tests', () => {
     })
 
     // Performance benchmarks (in mock time units)
-    expect(renderTimes[1000]).toBeLessThan(100) // Should render 1k rows quickly
-    expect(renderTimes[5000]).toBeLessThan(200) // 5k rows should scale reasonably
-    expect(renderTimes[10000]).toBeLessThan(300) // 10k rows should still be acceptable
+    expect(renderTimes[1000] ?? 0).toBeLessThan(100) // Should render 1k rows quickly
+    expect(renderTimes[5000] ?? 0).toBeLessThan(200) // 5k rows should scale reasonably
+    expect(renderTimes[10000] ?? 0).toBeLessThan(300) // 10k rows should still be acceptable
 
     // Verify scaling is not exponential
-    const scalingFactor = renderTimes[10000] / renderTimes[1000]
+    const scalingFactor = (renderTimes[10000] ?? 0) / (renderTimes[1000] ?? 1)
     expect(scalingFactor).toBeLessThan(5) // Should not be more than 5x slower for 10x data
   })
 
@@ -266,8 +266,8 @@ describe('DataTable Performance Regression Tests', () => {
     })
 
     // High performance should be fastest
-    expect(results['high-performance']).toBeLessThanOrEqual(results['optimized'])
-    expect(results['optimized']).toBeLessThanOrEqual(results['conservative'])
+    expect(results['high-performance'] ?? 0).toBeLessThanOrEqual(results['optimized'] ?? 0)
+    expect(results['optimized'] ?? 0).toBeLessThanOrEqual(results['conservative'] ?? 0)
 
     // All configs should be within reasonable bounds
     Object.values(results).forEach(time => {
@@ -351,8 +351,8 @@ describe('DataTable Performance Regression Tests', () => {
     })
 
     // Lower overscan should generally perform better
-    expect(scrollResults['1-1']).toBeLessThanOrEqual(scrollResults['20-10'])
-    expect(scrollResults['5-3']).toBeLessThanOrEqual(scrollResults['20-10'])
+    expect(scrollResults['1-1'] ?? 0).toBeLessThanOrEqual(scrollResults['20-10'] ?? 0)
+    expect(scrollResults['5-3'] ?? 0).toBeLessThanOrEqual(scrollResults['20-10'] ?? 0)
   })
 
   it('should measure column resizing performance impact', () => {

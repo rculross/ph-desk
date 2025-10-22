@@ -123,7 +123,7 @@ export function useIssues(
         
         log.debug('Issues query completed successfully', {
           duration: Math.round(endTime - startTime),
-          recordCount: result.data.length || 0,
+          recordCount: result.data.length ?? 0,
           total: result.total,
           hasMore: result.hasMore,
           limit: result.limit,
@@ -172,7 +172,7 @@ export function useIssuesInfinite(filters?: IssueFilters, limit: number = 25) {
         log.debug('Infinite issues query page completed', {
           duration: Math.round(endTime - startTime),
           page: pageParam,
-          recordCount: result.data.length || 0,
+          recordCount: result.data.length ?? 0,
           hasMore: result.hasMore,
           priorityBreakdown: result.data ? getPriorityBreakdown(result.data) : {}
         })
@@ -210,8 +210,8 @@ export function useIssuesInfinite(filters?: IssueFilters, limit: number = 25) {
 // Helper function for logging priority breakdown
 function getPriorityBreakdown(issues: Issue[]): Record<string, number> {
   return issues.reduce((acc, issue) => {
-    const priority = issue.priority || 'unknown'
-    acc[priority] = (acc[priority] || 0) + 1
+    const priority = issue.priority ?? 'unknown'
+    acc[priority] = (acc[priority] ?? 0) + 1
     return acc
   }, {} as Record<string, number>)
 }
@@ -306,7 +306,7 @@ export function useSearchIssues(request: IssueSearchRequest, options?: { enabled
         log.debug('Issues search completed', {
           duration: Math.round(endTime - startTime),
           query: request.query,
-          resultCount: result.data.length || 0,
+          resultCount: result.data.length ?? 0,
           total: result.total
         })
         
@@ -371,14 +371,14 @@ export function useCreateIssue() {
       queryClient.setQueryData(queryKeys.issue(newIssue._id), newIssue)
 
       // Invalidate lists to include new issue
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues })
-      queryClient.invalidateQueries({ queryKey: queryKeys.issueStats() })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issues })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issueStats() })
 
       // Update my issues if assigned to current user
       const session = queryClient.getQueryData(queryKeys.session())
       if (session && newIssue.assigneeId === (session as any).user?.id) {
         log.debug('Updating my issues cache - issue assigned to current user')
-        queryClient.invalidateQueries({ queryKey: queryKeys.myIssues() })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.myIssues() })
       }
     },
     onError: (error) => {
@@ -421,11 +421,11 @@ export function useUpdateIssue() {
     },
     onSettled: (data, error, { issueId }) => {
       // Refresh the issue
-      queryClient.invalidateQueries({ queryKey: queryKeys.issue(issueId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issue(issueId) })
 
       // Invalidate related queries
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues })
-      queryClient.invalidateQueries({ queryKey: queryKeys.issueStats() })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issues })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issueStats() })
     },
     meta: {
       successMessage: 'Issue updated successfully'
@@ -440,12 +440,12 @@ export function useDeleteIssue() {
     mutationFn: (issueId: string) => issuesService.deleteIssue(issueId),
     onSuccess: (_, issueId) => {
       // Remove from cache
-      queryClient.removeQueries({ queryKey: queryKeys.issue(issueId) })
+      void queryClient.removeQueries({ queryKey: queryKeys.issue(issueId) })
 
       // Update lists
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues })
-      queryClient.invalidateQueries({ queryKey: queryKeys.issueStats() })
-      queryClient.invalidateQueries({ queryKey: queryKeys.myIssues() })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issues })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issueStats() })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.myIssues() })
     },
     meta: {
       successMessage: 'Issue deleted successfully'
@@ -459,9 +459,9 @@ export function useBulkUpdateIssues() {
   return useMutation({
     mutationFn: async (request: BulkUpdateRequest) => {
       const startTime = performance.now()
-      log.debug('Starting bulk update of issues', { 
-        issueCount: request.issueIds.length || 0,
-        updateFields: Object.keys(request.updates || {})
+      log.debug('Starting bulk update of issues', {
+        issueCount: request.issueIds.length ?? 0,
+        updateFields: Object.keys(request.updates ?? {})
       })
       
       try {
@@ -471,7 +471,7 @@ export function useBulkUpdateIssues() {
         log.info('Bulk issue update completed successfully', {
           duration: Math.round(endTime - startTime),
           updatedCount: result.length,
-          requestedCount: request.issueIds.length || 0
+          requestedCount: request.issueIds.length ?? 0
         })
         
         return result
@@ -479,7 +479,7 @@ export function useBulkUpdateIssues() {
         const endTime = performance.now()
         log.error('Bulk issue update failed', {
           duration: Math.round(endTime - startTime),
-          issueCount: request.issueIds.length || 0,
+          issueCount: request.issueIds.length ?? 0,
           error: error instanceof Error ? error.message : 'Unknown error'
         })
         throw error
@@ -496,8 +496,8 @@ export function useBulkUpdateIssues() {
       })
 
       // Invalidate list queries
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues })
-      queryClient.invalidateQueries({ queryKey: queryKeys.issueStats() })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issues })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issueStats() })
     },
     onError: (error) => {
       log.error('Bulk issue update mutation failed', {
@@ -540,7 +540,7 @@ export function useAddComment() {
       )
 
       // Invalidate activity to include new comment
-      queryClient.invalidateQueries({ queryKey: queryKeys.issueActivity(issueId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issueActivity(issueId) })
     },
     meta: {
       successMessage: 'Comment added successfully'
@@ -556,8 +556,8 @@ export function useAssignIssue() {
       issuesService.assignIssue(issueId, assigneeId),
     onSuccess: (updatedIssue, { issueId }) => {
       queryClient.setQueryData(queryKeys.issue(issueId), updatedIssue)
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues })
-      queryClient.invalidateQueries({ queryKey: queryKeys.myIssues() })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issues })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.myIssues() })
     },
     meta: {
       successMessage: 'Issue assigned successfully'
@@ -573,8 +573,8 @@ export function useResolveIssue() {
       issuesService.resolveIssue(issueId, resolution),
     onSuccess: (updatedIssue, { issueId }) => {
       queryClient.setQueryData(queryKeys.issue(issueId), updatedIssue)
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues })
-      queryClient.invalidateQueries({ queryKey: queryKeys.issueStats() })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issues })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issueStats() })
     },
     meta: {
       successMessage: 'Issue resolved successfully'
@@ -589,7 +589,7 @@ export function useExportIssues() {
       log.debug('Starting issues export', { 
         format: options.format,
         hasFilters: !!options.filters && Object.keys(options.filters).length > 0,
-        fieldCount: options.fields?.length || 0
+        fieldCount: options.fields?.length ?? 0
       })
       
       try {
@@ -638,9 +638,9 @@ export function useIssueSubscription(issueId: string) {
 
     // Set up real-time subscription (WebSocket, SSE, or polling)
     const interval = setInterval(() => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.issue(issueId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.issueComments(issueId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.issueActivity(issueId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issue(issueId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issueComments(issueId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issueActivity(issueId) })
     }, 30000) // Poll every 30 seconds
 
     return () => clearInterval(interval)

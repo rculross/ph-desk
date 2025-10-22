@@ -162,7 +162,7 @@ export function SalesforceFieldTable({
         minSize: 120,
         cell: ({ getValue }) => {
           const value = getValue()
-          const stringValue = String(value || '')
+          const stringValue = String(value ?? '')
           const displayValue = enableSearchHighlight && searchTerm
             ? highlightSearchTerm(stringValue, searchTerm)
             : stringValue
@@ -200,7 +200,7 @@ export function SalesforceFieldTable({
         minSize: 120,
         cell: ({ getValue }) => {
           const value = getValue()
-          const stringValue = String(value || '')
+          const stringValue = String(value ?? '')
           const displayValue = enableSearchHighlight && searchTerm
             ? highlightSearchTerm(stringValue, searchTerm)
             : stringValue

@@ -20,7 +20,7 @@ import {
 import { render, cleanup, screen } from '@testing-library/react'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
-import { sanitizeCSSPropertyName } from '../../utils/text-utils'
+import { sanitizeCSSPropertyName } from '../../../utils/text-utils'
 import { DataTable } from '../DataTable'
 
 // Mock logger
@@ -58,7 +58,7 @@ const typeSafetyTestData: (TypeSafeTestRow | null | undefined)[] = [
   { id: 7, name: 'Complex', value: 700, dynamic: { a: 1, b: 'string', c: null } },
   null, // Null row
   undefined, // Undefined row
-  { id: 8 }, // Minimal data
+  { id: 8, value: null }, // Minimal data
   { id: 9, name: 'Unicode: 🚀🎯💯', value: 900 }, // Unicode handling
   // @ts-expect-error - Intentional type violation for testing
   { id: 10, name: 123, value: 'not-a-number' }, // Type violations
@@ -214,13 +214,16 @@ function BoundsCheckedRow<TData>({
           )
         }
 
+        const cellValue = cell.getValue()
+        const displayValue = cellValue != null ? String(cellValue) : 'N/A'
+
         return (
           <div
             key={cell.id}
             data-testid={`valid-cell-${rowIndex}-${cellIndex}`}
             className="p-2 border-r"
           >
-            {cell.getValue() ?? 'N/A'}
+            {displayValue}
           </div>
         )
       })}
@@ -449,7 +452,7 @@ describe('DataTable Type Safety Tests', () => {
   })
 
   it('should validate array bounds in custom virtualizer measurements', () => {
-    const largeData = Array.from({ length: 10000 }, (_, i) => ({
+    const largeData: TypeSafeTestRow[] = Array.from({ length: 10000 }, (_, i) => ({
       id: i,
       name: `Item ${i}`,
       value: i
@@ -478,7 +481,7 @@ describe('DataTable Type Safety Tests', () => {
     // Check that virtualized elements have valid indices
     const virtualizedRows = container.querySelectorAll('[data-index]')
     virtualizedRows.forEach(row => {
-      const index = parseInt(row.getAttribute('data-index') || '0', 10)
+      const index = parseInt(row.getAttribute('data-index') ?? '0', 10)
       expect(index).toBeGreaterThanOrEqual(0)
       expect(index).toBeLessThan(largeData.length)
     })

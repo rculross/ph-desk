@@ -1,12 +1,18 @@
 /**
  * Login Prompt Component
  *
- * Displays login UI when user is not authenticated
- * Allows user to choose environment (production/demo) and login to Planhat
+ * Displays simple login UI when user is not authenticated
+ * Direct login button that opens Planhat auth window
  */
 
-import { useState, useEffect } from 'react'
-import { authService, type AuthEnvironment } from '../../services/auth.service'
+import { useState } from 'react'
+
+import { tenantService } from '@/api/services/tenant.service'
+import { APP_VERSION } from '@/config/version'
+import type { AuthEnvironment } from '@/services/auth.service'
+import { useTenantStore } from '@/stores/tenant.store'
+
+import { authService } from '../../services/auth.service'
 import { logger } from '../../utils/logger'
 
 const log = logger.api
@@ -20,16 +26,67 @@ export function LoginPrompt({ onLoginSuccess }: LoginPromptProps) {
   const [error, setError] = useState<string | null>(null)
   const [environment, setEnvironment] = useState<AuthEnvironment>('production')
 
+  // Get tenant store actions
+  const { switchTenant, fetchAvailableTenants } = useTenantStore()
+
   const handleLogin = async () => {
     setIsLoading(true)
     setError(null)
 
     try {
-      log.info('[LoginPrompt] Initiating login flow...', { environment })
+      log.info('[LoginPrompt] Opening Planhat login window...', { environment })
 
-      await authService.login(environment)
+      const authResult = await authService.login(environment)
 
-      log.info('[LoginPrompt] Login successful')
+      log.info('[LoginPrompt] Login successful', {
+        tenantSlug: authResult.tenantSlug,
+        environment: authResult.environment
+      })
+
+      // If we have a tenant slug from login, switch to that tenant
+      if (authResult.tenantSlug) {
+        log.info('[LoginPrompt] Switching to tenant from login', {
+          tenantSlug: authResult.tenantSlug
+        })
+
+        try {
+          // Save the tenant slug to storage first so tenant discovery can use it
+          await window.electron.storage.set({
+            tenantSlug: authResult.tenantSlug
+          })
+          log.info('[LoginPrompt] Saved tenant slug to storage', {
+            tenantSlug: authResult.tenantSlug
+          })
+
+          // Fetch available tenants (will use saved tenant slug for discovery)
+          await fetchAvailableTenants(undefined, true)
+
+          // Switch to the tenant from login
+          await switchTenant(authResult.tenantSlug)
+
+          log.info('[LoginPrompt] Successfully switched to tenant, validating connection...', {
+            tenantSlug: authResult.tenantSlug
+          })
+
+          // Explicitly validate the connection by calling /myprofile
+          const hasAccess = await tenantService.hasAccessToTenant(authResult.tenantSlug)
+          if (hasAccess) {
+            log.info('[LoginPrompt] Connection validated successfully', {
+              tenantSlug: authResult.tenantSlug
+            })
+          } else {
+            log.warn('[LoginPrompt] Connection validation failed', {
+              tenantSlug: authResult.tenantSlug
+            })
+          }
+        } catch (switchError) {
+          log.error('[LoginPrompt] Failed to switch tenant after login', {
+            error: switchError instanceof Error ? switchError.message : 'Unknown error',
+            tenantSlug: authResult.tenantSlug
+          })
+          // Don't fail the login, just log the error - user can manually select tenant
+        }
+      }
 
       // Notify parent component
       if (onLoginSuccess) {
@@ -56,7 +113,7 @@ export function LoginPrompt({ onLoginSuccess }: LoginPromptProps) {
         {/* Header */}
         <div className="text-center">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Welcome to PH Tools
+            Welcome to Planhat Tools
           </h1>
           <p className="text-gray-600">
             Please login to your Planhat account to continue
@@ -132,7 +189,7 @@ export function LoginPrompt({ onLoginSuccess }: LoginPromptProps) {
 
         {/* Login Button */}
         <button
-          onClick={handleLogin}
+          onClick={() => { void handleLogin() }}
           disabled={isLoading}
           className={`
             w-full py-3 px-4 rounded-lg font-medium text-white
@@ -184,7 +241,7 @@ export function LoginPrompt({ onLoginSuccess }: LoginPromptProps) {
 
         {/* Version Info */}
         <div className="text-center text-xs text-gray-400 pt-4 border-t border-gray-200">
-          PH Tools Desktop v3.1.161
+          Planhat Tools v{APP_VERSION}
         </div>
       </div>
     </div>

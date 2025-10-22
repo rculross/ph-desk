@@ -107,7 +107,7 @@ export function useFieldDetection(options: UseFieldDetectionOptions): UseFieldDe
   const queryKey = useMemo(() => [
     'field-detection',
     entityType,
-    tenantSlug || 'default-tenant'
+    tenantSlug ?? 'default-tenant'
   ], [entityType, tenantSlug])
 
   // Query for field detection
@@ -292,7 +292,7 @@ export function useFieldDetection(options: UseFieldDetectionOptions): UseFieldDe
 
   // Tenant-specific cache invalidation utility
   const invalidateTenantCache = useCallback(async (targetTenantSlug?: string) => {
-    const tenant = targetTenantSlug || tenantSlug || 'default-tenant'
+    const tenant = targetTenantSlug ?? tenantSlug ?? 'default-tenant'
 
     log.debug('Invalidating field detection cache for tenant', {
       entityType,
@@ -370,10 +370,10 @@ export function useFieldDetection(options: UseFieldDetectionOptions): UseFieldDe
   }, [entityType, tenantSlug])
 
   // Derived values with safe defaults
-  const standardFields = detectionResult?.standardFields || []
-  const customFields = detectionResult?.customFields || []
-  const discoveredFields = detectionResult?.discoveredFields || []
-  const allFields = detectionResult?.allFields || []
+  const standardFields = detectionResult?.standardFields ?? []
+  const customFields = detectionResult?.customFields ?? []
+  const discoveredFields = detectionResult?.discoveredFields ?? []
+  const allFields = detectionResult?.allFields ?? []
 
   const includedFields = useMemo(() => 
     fieldMappings.filter(field => field.include), 

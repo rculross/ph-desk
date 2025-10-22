@@ -27,16 +27,15 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@/shared/*": ["src/shared/*"],
       "@/app/*": ["src/app/*"],
       "@/assets/*": ["src/assets/*"],
       "@/styles/*": ["src/styles/*"],
-      "@/types/*": ["src/shared/types/*"],
-      "@/utils/*": ["src/shared/utils/*"],
-      "@/components/*": ["src/shared/components/*"],
-      "@/hooks/*": ["src/shared/hooks/*"],
-      "@/stores/*": ["src/shared/stores/*"],
-      "@/api/*": ["src/shared/api/*"]
+      "@/types/*": ["src/types/*"],
+      "@/utils/*": ["src/utils/*"],
+      "@/components/*": ["src/components/*"],
+      "@/hooks/*": ["src/hooks/*"],
+      "@/stores/*": ["src/stores/*"],
+      "@/api/*": ["src/api/*"]
     },
     "types": ["node", "vite/client", "@testing-library/jest-dom"]
   },
@@ -55,10 +54,7 @@
     "release",
     "*.config.ts",
     "*.config.js",
-    "electron",
-    "src/shared/api/queries/**/*",
-    "src/shared/api/services/**/*",
-    "src/shared/stores/tenant.store.ts"
+    "electron"
   ],
   "references": [
     {

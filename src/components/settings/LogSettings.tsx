@@ -67,9 +67,9 @@ export function LogSettings() {
     const loadSettings = async () => {
       try {
         // Check Chrome storage for saved log level
-        if (typeof chrome !== 'undefined' && chrome.storage) {
-          const result = await chrome.storage.local.get(['logLevel'])
-          const current = result.logLevel || 'info'
+        if (typeof window !== 'undefined' && window.electron.storage) {
+          const result = await window.electron.storage.get(['logLevel'])
+          const current = result.logLevel ?? 'info'
           setLevel(current as LogLevelSetting)
         } else {
           // Fallback to default
@@ -99,8 +99,8 @@ export function LogSettings() {
       setLogLevel(logLevel)
       
       // Save to Chrome storage for persistence
-      if (typeof chrome !== 'undefined' && chrome.storage) {
-        await chrome.storage.local.set({ logLevel })
+      if (typeof window !== 'undefined' && window.electron.storage) {
+        await window.electron.storage.set({ logLevel })
       }
       
       setLevel(logLevel)

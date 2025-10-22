@@ -182,13 +182,13 @@ class LLMService {
       this.validateChatRequest(provider, messages, apiKey, options)
 
       const config = this.getProviderConfig(provider)
-      const selectedModel = options.model || config.availableModels[0]?.modelId || 'default'
+      const selectedModel = options.model ?? config.availableModels[0]?.modelId ?? 'default'
 
       log.debug('Starting LLM chat request', {
         provider,
         model: selectedModel,
         messageCount: messages.length,
-        streaming: options.stream || false
+        streaming: options.stream ?? false
       })
 
       // Get HTTP client for provider
@@ -331,7 +331,7 @@ class LLMService {
       switch (provider) {
         case 'claude':
           // Parse Anthropic's /v1/models response
-          const claudeModels = response.data || []
+          const claudeModels = response.data ?? []
           return claudeModels
             .filter((model: any) => model.type === 'model')
             .map((model: any) => {
@@ -340,17 +340,17 @@ class LLMService {
 
               return {
                 modelId: model.id,
-                displayName: model.display_name || staticModel?.displayName || model.id,
-                description: staticModel?.description || 'Claude model',
-                maxTokens: staticModel?.maxTokens || 200000,
-                costPer1kTokens: staticModel?.costPer1kTokens || { input: 0.003, output: 0.015 },
-                capabilities: staticModel?.capabilities || { streaming: true, vision: true, functionCalling: true }
+                displayName: model.display_name ?? staticModel?.displayName ?? model.id,
+                description: staticModel?.description ?? 'Claude model',
+                maxTokens: staticModel?.maxTokens ?? 200000,
+                costPer1kTokens: staticModel?.costPer1kTokens ?? { input: 0.003, output: 0.015 },
+                capabilities: staticModel?.capabilities ?? { streaming: true, vision: true, functionCalling: true }
               }
             })
 
         case 'openai':
           // Parse OpenAI's /v1/models response
-          const openaiModels = response.data || []
+          const openaiModels = response.data ?? []
           return openaiModels
             .filter((model: any) => model.id.includes('gpt'))
             .map((model: any) => {
@@ -358,11 +358,11 @@ class LLMService {
 
               return {
                 modelId: model.id,
-                displayName: staticModel?.displayName || model.id,
-                description: staticModel?.description || 'OpenAI model',
-                maxTokens: staticModel?.maxTokens || 4000,
-                costPer1kTokens: staticModel?.costPer1kTokens || { input: 0.001, output: 0.002 },
-                capabilities: staticModel?.capabilities || { streaming: true, vision: false, functionCalling: true }
+                displayName: staticModel?.displayName ?? model.id,
+                description: staticModel?.description ?? 'OpenAI model',
+                maxTokens: staticModel?.maxTokens ?? 4000,
+                costPer1kTokens: staticModel?.costPer1kTokens ?? { input: 0.001, output: 0.002 },
+                capabilities: staticModel?.capabilities ?? { streaming: true, vision: false, functionCalling: true }
               }
             })
 
@@ -441,7 +441,7 @@ class LLMService {
 
         return {
           success: true,
-          message: `Successfully connected to ${config.availableModels.find(m => m.modelId === testModel.modelId)?.displayName || testModel.modelId}`,
+          message: `Successfully connected to ${config.availableModels.find(m => m.modelId === testModel.modelId)?.displayName ?? testModel.modelId}`,
           model: testModel.displayName
         }
       } else {
@@ -488,7 +488,7 @@ class LLMService {
           default:
             return {
               success: false,
-              message: error.message || 'Connection failed'
+              message: error.message ?? 'Connection failed'
             }
         }
       }
@@ -511,7 +511,7 @@ class LLMService {
   ): number {
     try {
       const config = this.getProviderConfig(provider)
-      const selectedModel = model || config.availableModels[0]?.modelId || 'default'
+      const selectedModel = model ?? config.availableModels[0]?.modelId ?? 'default'
       const modelConfig = config.availableModels.find(m => m.modelId === selectedModel)
 
       if (!modelConfig) {
@@ -604,7 +604,7 @@ class LLMService {
 
     return {
       model,
-      max_tokens: Math.min(options.maxTokens || 4000, config.maxTokens),
+      max_tokens: Math.min(options.maxTokens ?? 4000, config.maxTokens),
       messages: claudeMessages,
       ...(systemMessage && { system: systemMessage.content }),
       ...(options.temperature !== undefined && { temperature: options.temperature }),
@@ -626,7 +626,7 @@ class LLMService {
     return {
       model,
       messages: openAIMessages,
-      max_tokens: Math.min(options.maxTokens || 4000, config.maxTokens),
+      max_tokens: Math.min(options.maxTokens ?? 4000, config.maxTokens),
       ...(options.temperature !== undefined && { temperature: options.temperature }),
       ...(options.stream && { stream: true })
     }
@@ -652,7 +652,7 @@ class LLMService {
       contents,
       ...(systemMessage && { systemInstruction: { parts: [{ text: systemMessage.content }] } }),
       generationConfig: {
-        maxOutputTokens: Math.min(options.maxTokens || 4000, config.maxTokens),
+        maxOutputTokens: Math.min(options.maxTokens ?? 4000, config.maxTokens),
         ...(options.temperature !== undefined && { temperature: options.temperature })
       }
     }
@@ -731,7 +731,7 @@ class LLMService {
         headerAnalysis: {
           allHeaders: headers,
           authHeaderSet: !!headers[config.authHeader],
-          authHeaderValue: headers[config.authHeader] || 'NOT SET',
+          authHeaderValue: headers[config.authHeader] ?? 'NOT SET',
           contentType: headers['Content-Type'],
           anthropicVersion: headers['anthropic-version']
         },
@@ -740,7 +740,7 @@ class LLMService {
         requestPayload: {
           model: payload.model,
           max_tokens: payload.max_tokens,
-          messageCount: payload.messages?.length || 0,
+          messageCount: payload.messages?.length ?? 0,
           hasSystemMessage: !!payload.system,
           fullPayload: payload
         }
@@ -772,7 +772,7 @@ class LLMService {
         provider,
         status: 'success',
         hasContent: !!response?.content,
-        contentLength: response?.content?.[0]?.text?.length || 0,
+        contentLength: response?.content?.[0]?.text?.length ?? 0,
         usage: response?.usage
       })
 
@@ -810,7 +810,7 @@ class LLMService {
 
         // Error Object Analysis
         errorAnalysis: {
-          errorType: (error as any)?.constructor?.name || 'Unknown',
+          errorType: (error as any)?.constructor?.name ?? 'Unknown',
           errorCode: (error as any)?.code,
           errorMessage: (error as any)?.message,
           isNetworkError: (error as any)?.code === 'ENOTFOUND' || (error as any)?.code === 'ECONNREFUSED',
@@ -837,29 +837,29 @@ class LLMService {
 
       switch (provider) {
         case 'claude':
-          content = response.content?.[0]?.text || ''
+          content = response.content?.[0]?.text ?? ''
           usage = {
-            inputTokens: response.usage?.input_tokens || 0,
-            outputTokens: response.usage?.output_tokens || 0,
-            totalTokens: (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0)
+            inputTokens: response.usage?.input_tokens ?? 0,
+            outputTokens: response.usage?.output_tokens ?? 0,
+            totalTokens: (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0)
           }
           break
 
         case 'openai':
-          content = response.choices?.[0]?.message?.content || ''
+          content = response.choices?.[0]?.message?.content ?? ''
           usage = {
-            inputTokens: response.usage?.prompt_tokens || 0,
-            outputTokens: response.usage?.completion_tokens || 0,
-            totalTokens: response.usage?.total_tokens || 0
+            inputTokens: response.usage?.prompt_tokens ?? 0,
+            outputTokens: response.usage?.completion_tokens ?? 0,
+            totalTokens: response.usage?.total_tokens ?? 0
           }
           break
 
         case 'gemini':
-          content = response.candidates?.[0]?.content?.parts?.[0]?.text || ''
+          content = response.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
           usage = {
-            inputTokens: response.usageMetadata?.promptTokenCount || 0,
-            outputTokens: response.usageMetadata?.candidatesTokenCount || 0,
-            totalTokens: response.usageMetadata?.totalTokenCount || 0
+            inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
+            outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
+            totalTokens: response.usageMetadata?.totalTokenCount ?? 0
           }
           break
       }
@@ -1041,7 +1041,7 @@ class LLMService {
    */
   private handleHttpError(error: any, provider: LLMProvider): LLMError {
     const status = error.response?.status
-    const statusText = error.response?.statusText || ''
+    const statusText = error.response?.statusText ?? ''
     const responseData = error.response?.data
 
     switch (status) {
@@ -1095,7 +1095,7 @@ class LLMService {
         }
 
         return new LLMError(
-          error.message || 'Unknown API error',
+          error.message ?? 'Unknown API error',
           'REQUEST_FAILED',
           provider,
           { status, statusText, responseData }
@@ -1112,7 +1112,7 @@ class LLMService {
     }
 
     return new LLMError(
-      error.message || 'Unknown error occurred',
+      error.message ?? 'Unknown error occurred',
       'REQUEST_FAILED',
       provider,
       { model, originalError: error.message }

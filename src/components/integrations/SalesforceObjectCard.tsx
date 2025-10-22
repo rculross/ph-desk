@@ -177,7 +177,7 @@ export function SalesforceObjectCard({
   }, [selectObject, clearSelection, objectId, objectMapping.sfObject, isSelected])
 
   // Direction configuration
-  const directionKey = (objectMapping.direction || 'null') as keyof typeof DIRECTION_CONFIG
+  const directionKey = (objectMapping.direction ?? 'null') as keyof typeof DIRECTION_CONFIG
   const directionConfig = DIRECTION_CONFIG[directionKey]
 
   // Last sync formatting

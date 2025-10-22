@@ -104,7 +104,7 @@ class SearchRateLimiter {
 
   isRateLimited(identifier: string): boolean {
     const now = Date.now()
-    const state = this.limits.get(identifier) || {
+    const state = this.limits.get(identifier) ?? {
       requests: [],
       blocked: false,
       blockExpiresAt: 0
@@ -139,7 +139,7 @@ class SearchRateLimiter {
 
   recordRequest(identifier: string): void {
     const now = Date.now()
-    const state = this.limits.get(identifier) || {
+    const state = this.limits.get(identifier) ?? {
       requests: [],
       blocked: false,
       blockExpiresAt: 0
@@ -584,7 +584,7 @@ class SalesforceSearchService {
   ): number {
     const fieldName = field.fieldName.toLowerCase()
     const searchTerm_normalized = field.searchTerm
-    const displayLabel = field.displayLabel?.toLowerCase() || ''
+    const displayLabel = field.displayLabel?.toLowerCase() ?? ''
 
     // Exact match gets highest score
     if (fieldName === searchTerm || searchTerm_normalized === searchTerm) {

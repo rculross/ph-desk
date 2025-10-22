@@ -15,16 +15,11 @@ import { clsx } from 'clsx'
 import { logger } from '../../utils/logger'
 
 // Enhanced virtualizer interfaces to handle measurement methods
-interface EnhancedVirtualizer<TScrollElement extends Element, TItemElement extends Element>
-  extends Virtualizer<TScrollElement, TItemElement> {
+interface EnhancedVirtualizer {
   measureElement?: (element: Element | null) => void
   measureItems?: () => void
   measure?: () => void
 }
-
-// Type for virtualizer ref that may have enhanced measurement capabilities
-type VirtualizerRef<TScrollElement extends Element, TItemElement extends Element> =
-  React.MutableRefObject<EnhancedVirtualizer<TScrollElement, TItemElement>>
 
 
 import {
@@ -133,11 +128,11 @@ export function DataTable<TData>({
   const bodyMeasurementCallbacksRef = useRef<
     Map<number, (node: HTMLDivElement | null) => void>
   >(new Map())
-  const columnVirtualizerRef = useRef(columnVirtualizer) as VirtualizerRef<HTMLDivElement, HTMLDivElement>
+  const columnVirtualizerRef = useRef<EnhancedVirtualizer>(columnVirtualizer as unknown as EnhancedVirtualizer)
   const shouldVirtualizeColumnsRef = useRef(shouldVirtualizeColumns)
 
   useLayoutEffect(() => {
-    columnVirtualizerRef.current = columnVirtualizer as any
+    columnVirtualizerRef.current = columnVirtualizer as unknown as EnhancedVirtualizer
   }, [columnVirtualizer])
 
   useLayoutEffect(() => {
@@ -773,7 +768,7 @@ export function DataTable<TData>({
           {debugResize && enableColumnResizing && (
             <div className="absolute left-0 top-0 z-50 bg-black bg-opacity-75 p-2 text-xs text-white">
               <div>Resizing: {columnSizingInfo.isResizingColumn ? 'YES' : 'NO'}</div>
-              <div>Column: {columnSizingInfo.columnSizingStart[0] || 'None'}</div>
+              <div>Column: {columnSizingInfo.columnSizingStart[0] ?? 'None'}</div>
               <div>Start: {columnSizingInfo.startOffset}px</div>
               <div>Delta: {columnSizingInfo.deltaOffset}px</div>
               <div>Base Left: {baseResizeOffset.toFixed(2)}px</div>

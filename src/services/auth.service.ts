@@ -5,8 +5,8 @@
  * Handles login flow, session persistence, and cookie management
  */
 
-import { logger } from '../utils/logger'
 import type { AuthResult, StoredAuthData, PlanhatCookie } from '../types/electron'
+import { logger } from '../utils/logger'
 
 const log = logger.api
 
@@ -79,7 +79,7 @@ class AuthService {
   /**
    * Open login window and authenticate
    */
-  async login(environment: AuthEnvironment = 'production'): Promise<void> {
+  async login(environment: AuthEnvironment = 'production'): Promise<{tenantSlug: string | null, environment: AuthEnvironment}> {
     log.info('[Auth] Starting login flow...', { environment })
 
     try {
@@ -87,6 +87,7 @@ class AuthService {
 
       log.info('[Auth] Login successful', {
         tenantSlug: authResult.tenantSlug,
+        environment: authResult.environment,
         cookieCount: authResult.cookies.length
       })
 
@@ -98,6 +99,12 @@ class AuthService {
       }
 
       this.notifyAuthChange()
+
+      // Return the captured tenant slug and environment for immediate connection
+      return {
+        tenantSlug: authResult.tenantSlug,
+        environment: authResult.environment
+      }
     } catch (error) {
       log.error('[Auth] Login failed', { error })
       throw error
@@ -249,7 +256,7 @@ if (typeof window !== 'undefined') {
 }
 
 // Auto-initialize on module load (for Electron environment)
-if (typeof window !== 'undefined' && window.electron?.auth) {
+if (typeof window !== 'undefined' && window.electron.auth) {
   authService.initialize().catch(error => {
     console.error('[Auth] Failed to initialize:', error)
   })

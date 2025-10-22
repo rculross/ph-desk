@@ -117,155 +117,20 @@ class EndpointDiscoveryService {
    * Extract endpoints from browser tabs
    */
   async scanActiveTabs(): Promise<DiscoveredEndpoint[]> {
-    try {
-      // Check if we have tabs permission
-      if (!chrome.tabs) {
-        log.warn('Chrome tabs API not available')
-        return []
-      }
-
-      const tabs = await chrome.tabs.query({
-        url: ['*://*.planhat.com/*', '*://*.planhatdemo.com/*']
-      })
-
-      const discoveredEndpoints: DiscoveredEndpoint[] = []
-      const now = Date.now()
-
-      for (const tab of tabs) {
-        if (!tab.url?.trim()) continue
-
-        try {
-          const urlObj = new URL(tab.url)
-
-          // Look for Planhat URLs (either app.planhat.com or API endpoints)
-          const isPlanhatApp = urlObj.hostname.includes('planhat')
-          const isApiUrl = urlObj.pathname.startsWith('/api/')
-
-          if (!isPlanhatApp && !isApiUrl) continue
-
-          // For Planhat app URLs, extract the path as a potential endpoint
-          let endpointUrl = tab.url
-          if (isPlanhatApp && !isApiUrl) {
-            // Convert app URLs to potential API endpoints
-            // e.g., https://app.planhat.com/companies -> /companies
-            endpointUrl = urlObj.pathname || '/'
-          }
-
-          const { normalizedUrl, pattern, resourceType } = this.normalizeUrl(endpointUrl)
-
-          const endpoint: DiscoveredEndpoint = {
-            url: endpointUrl,
-            normalizedUrl,
-            method: 'GET', // Default to GET for tab scanning
-            pattern,
-            resourceType,
-            firstSeen: now,
-            lastUsed: now,
-            usageCount: 1,
-            metadata: {
-              source: 'tab-scan',
-              tabTitle: tab.title,
-              originalUrl: tab.url
-            }
-          }
-
-          discoveredEndpoints.push(endpoint)
-        } catch (error) {
-          log.error('Failed to process tab URL', { url: tab.url, error })
-        }
-      }
-
-      log.debug('Scanned active tabs for endpoints', {
-        tabCount: tabs.length,
-        endpointsFound: discoveredEndpoints.length
-      })
-
-      return discoveredEndpoints
-    } catch (error) {
-      log.error('Failed to scan active tabs', { error })
-      return []
-    }
+    // Desktop app: No browser tabs to scan
+    // Endpoint discovery not applicable in desktop environment
+    log.debug('scanActiveTabs: Not applicable in desktop app')
+    return []
   }
 
   /**
    * Extract endpoints from browser history
    */
   async scanBrowserHistory(days: number = 7): Promise<DiscoveredEndpoint[]> {
-    try {
-      // Check if we have history permission
-      if (!chrome.history) {
-        log.warn('Chrome history API not available')
-        return []
-      }
-
-      const startTime = Date.now() - (days * 24 * 60 * 60 * 1000)
-      const historyItems = await chrome.history.search({
-        text: 'planhat.com',
-        startTime,
-        maxResults: 1000
-      })
-
-      const discoveredEndpoints: DiscoveredEndpoint[] = []
-      const urlCounts = new Map<string, number>()
-
-      for (const item of historyItems) {
-        if (!item.url) continue
-
-        try {
-          const urlObj = new URL(item.url)
-
-          // Look for Planhat URLs
-          const isPlanhatApp = urlObj.hostname.includes('planhat')
-          const isApiUrl = urlObj.pathname.startsWith('/api/')
-
-          if (!isPlanhatApp && !isApiUrl) continue
-
-          // For Planhat app URLs, extract the path as a potential endpoint
-          let endpointUrl = item.url
-          if (isPlanhatApp && !isApiUrl) {
-            // Convert app URLs to potential API endpoints
-            endpointUrl = urlObj.pathname || '/'
-          }
-
-          const { normalizedUrl, pattern, resourceType } = this.normalizeUrl(endpointUrl)
-
-          // Count occurrences
-          const key = `${normalizedUrl}:GET`
-          urlCounts.set(key, (urlCounts.get(key) ?? 0) + (item.visitCount ?? 1))
-
-          const endpoint: DiscoveredEndpoint = {
-            url: endpointUrl,
-            normalizedUrl,
-            method: 'GET',
-            pattern,
-            resourceType,
-            firstSeen: item.lastVisitTime ?? Date.now(),
-            lastUsed: item.lastVisitTime ?? Date.now(),
-            usageCount: item.visitCount ?? 1,
-            metadata: {
-              source: 'history-scan',
-              title: item.title,
-              originalUrl: item.url
-            }
-          }
-
-          discoveredEndpoints.push(endpoint)
-        } catch (error) {
-          log.error('Failed to process history URL', { url: item.url, error })
-        }
-      }
-
-      log.debug('Scanned browser history for endpoints', {
-        historyItems: historyItems.length,
-        endpointsFound: discoveredEndpoints.length,
-        daysScanned: days
-      })
-
-      return discoveredEndpoints
-    } catch (error) {
-      log.error('Failed to scan browser history', { error })
-      return []
-    }
+    // Desktop app: No browser history to scan
+    // Endpoint discovery not applicable in desktop environment
+    log.debug('scanBrowserHistory: Not applicable in desktop app')
+    return []
   }
 
   /**
