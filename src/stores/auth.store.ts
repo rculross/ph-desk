@@ -204,11 +204,11 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
   },
   setSession: (session: import('../api/auth').AuthSession | null) => {
     if (session) {
-      logger.api.info(`Session updated - User: ${session.user?.email || 'none'}, Tenant: ${session.tenantContext?.slug || 'none'}, Auth: ${session.isAuthenticated}`)
+      logger.api.info(`Session updated - User: ${session.user?.email ?? 'none'}, Tenant: ${session.tenantContext?.slug ?? 'none'}, Auth: ${session.isAuthenticated}`)
       set({
         isAuthenticated: session.isAuthenticated,
-        user: session.user || null,
-        tenantContext: session.tenantContext || null,
+        user: session.user ?? null,
+        tenantContext: session.tenantContext ?? null,
         lastActivity: session.lastActivity
       })
     } else {

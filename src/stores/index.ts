@@ -4,6 +4,9 @@
  * Centralized exports for all Zustand stores used throughout the application.
  */
 
+import { create, type StoreApi } from 'zustand'
+import { createJSONStorage, persist, subscribeWithSelector } from 'zustand/middleware'
+
 import { logger } from '../utils/logger'
 
 // Export all stores
@@ -12,12 +15,11 @@ export * from './tenant.store'
 export * from './app.store'
 
 // Export common store utilities
-export { persist, createJSONStorage } from 'zustand/middleware'
-export { subscribeWithSelector } from 'zustand/middleware'
+export { persist, createJSONStorage }
+export { subscribeWithSelector }
 
 // Re-export zustand create for convenience
-export { create } from 'zustand'
-import { create } from 'zustand'
+export { create }
 
 /**
  * Store initialization and cleanup utilities
@@ -51,24 +53,26 @@ export const initializeStores = async () => {
 }
 
 // Store health check - verify all stores are working correctly
-export const checkStoreHealth = (): {
+export const checkStoreHealth = async (): Promise<{
   auth: boolean
   tenant: boolean
   app: boolean
   overall: boolean
-} => {
+}> => {
   try {
-    // Import stores synchronously since they should already be loaded
-    const authStore = require('./auth.store').useAuthStore
-    const tenantStore = require('./tenant.store').useTenantStore
-    const appStore = require('./app.store').useAppStore
+    // Import stores since they should already be loaded
+    const [{ useAuthStore }, { useTenantStore }, { useAppStore }] = await Promise.all([
+      import('./auth.store'),
+      import('./tenant.store'),
+      import('./app.store')
+    ])
 
-    const authHealth = typeof authStore === 'function' && typeof authStore.getState === 'function'
+    const authHealth = typeof useAuthStore === 'function' && typeof useAuthStore.getState === 'function'
 
     const tenantHealth =
-      typeof tenantStore === 'function' && typeof tenantStore.getState === 'function'
+      typeof useTenantStore === 'function' && typeof useTenantStore.getState === 'function'
 
-    const appHealth = typeof appStore === 'function' && typeof appStore.getState === 'function'
+    const appHealth = typeof useAppStore === 'function' && typeof useAppStore.getState === 'function'
 
 
     return {
@@ -140,22 +144,21 @@ export type StoreSlice<T, E = T> = (
 // Middleware composition helper
 export const createStore = <T>(
   initializer: StoreSlice<T>,
-  middlewares: Array<(f: any) => any> = []
+  middlewares: Array<(f: unknown) => unknown> = []
 ) => {
-  const composed = middlewares.reduce((acc, middleware) => middleware(acc), initializer)
+  const composed = middlewares.reduce((acc, middleware) => middleware(acc), initializer as unknown)
 
-  return create<T>()(composed)
+  return create<T>()(composed as StoreSlice<T>)
 }
 
 // Store persistence configuration
-export const createPersistConfig = (name: string, partialize?: (state: any) => any) => {
-  const { createJSONStorage } = require('zustand/middleware')
+export const createPersistConfig = <T>(name: string, partialize?: (state: T) => Partial<T>) => {
   return {
     name,
     storage: createJSONStorage(() => ({
       getItem: async (name: string) => {
         const result = await chrome.storage.local.get([name])
-        return result[name] || null
+        return (result[name] as string | null) ?? null
       },
       setItem: async (name: string, value: string) => {
         await chrome.storage.local.set({ [name]: value })

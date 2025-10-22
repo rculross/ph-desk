@@ -366,7 +366,7 @@ class SalesforceDataProcessorService {
     const mappings: SalesforceObjectMapping[] = []
 
     for (const objectDef of standardObjects) {
-      const objectSettings = (rawConfig as any)[objectDef.key]
+      const objectSettings = (rawConfig as unknown as Record<string, unknown>)[objectDef.key]
 
       if (!objectSettings) {
         continue // Skip if not configured
@@ -425,7 +425,7 @@ class SalesforceDataProcessorService {
    * Process dynamic sections (custom objects)
    */
   private async processDynamicSections(
-    sections: any[],
+    sections: unknown[],
     filterUserFields: boolean,
     maxFields: number,
     requestId: string
@@ -503,7 +503,7 @@ class SalesforceDataProcessorService {
    * Process standard field mappings
    */
   private async processFieldMappings(
-    rawFields: any[],
+    rawFields: unknown[],
     filterUserFields: boolean,
     maxFields: number,
     objectName: string,
@@ -571,7 +571,7 @@ class SalesforceDataProcessorService {
    * Process dynamic field mappings (from sections)
    */
   private async processDynamicFieldMappings(
-    rawFields: any[],
+    rawFields: unknown[],
     filterUserFields: boolean,
     maxFields: number,
     objectName: string,
@@ -736,35 +736,41 @@ class SalesforceDataProcessorService {
    * Utility methods
    */
 
-  private isValidFieldMapping(field: any): boolean {
-    return field &&
-           typeof field === 'object' &&
-           typeof field.sfField === 'string' &&
-           typeof field.phField === 'string' &&
-           field.sfField.length > 0 &&
-           field.phField.length > 0
+  private isValidFieldMapping(field: unknown): field is { sfField: string; phField: string } {
+    return typeof field === 'object' &&
+           field !== null &&
+           'sfField' in field &&
+           'phField' in field &&
+           typeof (field as { sfField: unknown }).sfField === 'string' &&
+           typeof (field as { phField: unknown }).phField === 'string' &&
+           (field as { sfField: string }).sfField.length > 0 &&
+           (field as { phField: string }).phField.length > 0
   }
 
-  private isValidDynamicFieldMapping(field: any): boolean {
-    return field &&
-           typeof field === 'object' &&
-           typeof field.sfProp === 'string' &&
-           typeof field.phProp === 'string' &&
-           field.sfProp.length > 0 &&
-           field.phProp.length > 0
+  private isValidDynamicFieldMapping(field: unknown): field is { sfProp: string; phProp: string } {
+    return typeof field === 'object' &&
+           field !== null &&
+           'sfProp' in field &&
+           'phProp' in field &&
+           typeof (field as { sfProp: unknown }).sfProp === 'string' &&
+           typeof (field as { phProp: unknown }).phProp === 'string' &&
+           (field as { sfProp: string }).sfProp.length > 0 &&
+           (field as { phProp: string }).phProp.length > 0
   }
 
-  private isUserField(field: any): boolean {
-    const fieldName = field.sfField || field.phField || ''
+  private isUserField(field: unknown): boolean {
+    const fieldObj = field as { sfField?: string; phField?: string }
+    const fieldName = fieldObj.sfField ?? fieldObj.phField ?? ''
     return this.userFieldPatterns.some(pattern => pattern.test(fieldName))
   }
 
-  private isDynamicUserField(field: any): boolean {
-    const fieldName = field.sfProp || field.phProp || ''
+  private isDynamicUserField(field: unknown): boolean {
+    const fieldObj = field as { sfProp?: string; phProp?: string }
+    const fieldName = fieldObj.sfProp ?? fieldObj.phProp ?? ''
     return this.userFieldPatterns.some(pattern => pattern.test(fieldName))
   }
 
-  private buildFilterDescription(settings: any): string | null {
+  private buildFilterDescription(settings: unknown): string | null {
     const filters: string[] = []
 
     if (settings.customerFlag?.values?.length) {
@@ -782,7 +788,7 @@ class SalesforceDataProcessorService {
     return filters.length > 0 ? filters.join('; ') : null
   }
 
-  private buildDynamicFilterDescription(section: any): string | null {
+  private buildDynamicFilterDescription(section: unknown): string | null {
     if (!section.sfFilter?.values?.length) {
       return null
     }
@@ -790,7 +796,7 @@ class SalesforceDataProcessorService {
     return `${section.sfFilter.sfProp}: ${section.sfFilter.values.join(', ')}`
   }
 
-  private formatTimestamp(timestamp: any): string | null {
+  private formatTimestamp(timestamp: unknown): string | null {
     if (!timestamp) return null
 
     try {
@@ -833,7 +839,7 @@ class SalesforceDataProcessorService {
    * @param content The content to sanitize
    * @returns Sanitized content safe for display
    */
-  private sanitizeHtmlContent(content: any): string {
+  private sanitizeHtmlContent(content: unknown): string {
     if (content == null) {
       return ''
     }
@@ -917,7 +923,7 @@ class SalesforceDataProcessorService {
   private createProcessingError(
     code: SalesforceErrorCode,
     message: string,
-    context: any
+    context: unknown
   ): SalesforceIntegrationError {
     return {
       code,

@@ -367,14 +367,14 @@ export const useSalesforceIntegrationStore = create<SalesforceIntegrationUIStore
           getItem: async (name: string) => {
             try {
               const result = await storageManager.safeGet([name])
-              return result[name] ?? null
+              return (result[name] as string | null) ?? null
             } catch (error) {
               log.warn('Salesforce UI store get failed, using fallback', {
                 key: name,
                 error: error instanceof Error ? error.message : 'Unknown error'
               })
               const fallbackResult = await chrome.storage.local.get([name])
-              return fallbackResult[name] ?? null
+              return (fallbackResult[name] as string | null) ?? null
             }
           },
           setItem: async (name: string, value: string) => {
@@ -428,8 +428,10 @@ export const useSalesforceIntegrationStore = create<SalesforceIntegrationUIStore
 
           if (state) {
             // Convert Array back to Set for expandedObjects
-            if (Array.isArray((state as any).expandedObjects)) {
-              state.expandedObjects = new Set((state as any).expandedObjects)
+            // During rehydration, expandedObjects might be an array instead of a Set
+            const expandedData = (state as unknown as { expandedObjects: string[] | Set<string> }).expandedObjects
+            if (Array.isArray(expandedData)) {
+              state.expandedObjects = new Set(expandedData)
             }
 
             log.debug('Salesforce UI store rehydrated', {
