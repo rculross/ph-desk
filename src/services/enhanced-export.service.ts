@@ -9,7 +9,7 @@
 import { format } from 'date-fns'
 
 // Dynamic imports to prevent service worker issues
-let parseCSV: any, unparseCSV: any, XlsxPopulate: any
+let parseCSV: ((input: string, config?: unknown) => unknown) | undefined, unparseCSV: ((data: unknown, config?: unknown) => string) | undefined, XlsxPopulate: unknown
 
 // Lazy load libraries
 async function loadCSVLibrary() {
@@ -72,7 +72,7 @@ export interface ExportProgress {
   downloadUrl?: string
 }
 
-export interface EnhancedExportRequest<T = any> {
+export interface EnhancedExportRequest<T = unknown> {
   data: T[]
   format: ExportFormat
   filename: string
@@ -86,7 +86,7 @@ export interface EnhancedExportRequest<T = any> {
 export interface MultiSheetExportRequest {
   sheets: {
     name: string
-    data: any[]
+    data: unknown[]
     fields: EnhancedFieldMapping[]
     options?: Partial<EnhancedExportOptions>
   }[]
@@ -121,10 +121,10 @@ export interface WorkbookOptions {
   description?: string
   category?: string
   company?: string
-  properties?: Record<string, any>
+  properties?: Record<string, unknown>
 }
 
-export interface StreamingExportRequest<T = any> {
+export interface StreamingExportRequest<T = unknown> {
   dataProvider: (offset: number, limit: number) => Promise<{ data: T[]; total: number }>
   format: ExportFormat
   filename: string
@@ -183,7 +183,7 @@ export class EnhancedExportService extends ExportJobOrchestrator {
   /**
    * Start an enhanced export job with rich formatting
    */
-  async startEnhancedExport<T = any>(request: EnhancedExportRequest<T>): Promise<string> {
+  async startEnhancedExport<T = unknown>(request: EnhancedExportRequest<T>): Promise<string> {
     const { jobId, signal } = this.initializeJob({ totalRecords: request.data.length })
 
     this.log.info('Starting enhanced export job', {
@@ -385,8 +385,8 @@ export class EnhancedExportService extends ExportJobOrchestrator {
    * Populate worksheet with data and styling
    */
   private async populateWorksheet(
-    worksheet: any,
-    data: any[],
+    worksheet: unknown,
+    data: unknown[],
     fields: EnhancedFieldMapping[],
     options: EnhancedExportOptions
   ): Promise<void> {
@@ -434,7 +434,7 @@ export class EnhancedExportService extends ExportJobOrchestrator {
    * Add headers with styling
    */
   private async addHeaders(
-    worksheet: any,
+    worksheet: unknown,
     fields: EnhancedFieldMapping[],
     row: number,
     options: EnhancedExportOptions
@@ -461,8 +461,8 @@ export class EnhancedExportService extends ExportJobOrchestrator {
    * Add data row with conditional formatting and styling
    */
   private async addDataRow(
-    worksheet: any,
-    rowData: any,
+    worksheet: unknown,
+    rowData: unknown,
     fields: EnhancedFieldMapping[],
     row: number,
     options: EnhancedExportOptions,
@@ -504,7 +504,7 @@ export class EnhancedExportService extends ExportJobOrchestrator {
   /**
    * Apply cell style using xlsx-populate
    */
-  private applyCellStyle(cell: any, style: CellStyle): void {
+  private applyCellStyle(cell: unknown, style: CellStyle): void {
     if (!this.config.enableStyling) return
 
     if (style.bold) cell.style('bold', true)
@@ -535,7 +535,7 @@ export class EnhancedExportService extends ExportJobOrchestrator {
   /**
    * Format cell value based on field type and formatter
    */
-  private formatCellValue(value: any, field: EnhancedFieldMapping): any {
+  private formatCellValue(value: unknown, field: EnhancedFieldMapping): unknown {
     if (value === null || value === undefined) return ''
     
     // Use custom formatter if provided
@@ -572,7 +572,7 @@ export class EnhancedExportService extends ExportJobOrchestrator {
   /**
    * Get type-specific styling
    */
-  private getTypeSpecificStyle(type: string, value: any): CellStyle {
+  private getTypeSpecificStyle(type: string, value: unknown): CellStyle {
     const style: CellStyle = {}
 
     switch (type) {
@@ -613,7 +613,7 @@ export class EnhancedExportService extends ExportJobOrchestrator {
    * Evaluate conditional formatting rules
    */
   private evaluateConditionalFormatting(
-    value: any,
+    value: unknown,
     rules: ConditionalFormattingRule[]
   ): CellStyle | null {
     for (const rule of rules) {
@@ -627,7 +627,7 @@ export class EnhancedExportService extends ExportJobOrchestrator {
   /**
    * Evaluate a single conditional formatting condition
    */
-  private evaluateCondition(value: any, rule: ConditionalFormattingRule): boolean {
+  private evaluateCondition(value: unknown, rule: ConditionalFormattingRule): boolean {
     switch (rule.condition) {
       case 'equal':
         return value === rule.value
@@ -649,7 +649,7 @@ export class EnhancedExportService extends ExportJobOrchestrator {
   /**
    * Create summary sheet for multi-sheet exports
    */
-  private async createSummarySheet(workbook: any, sheets: any[]): Promise<void> {
+  private async createSummarySheet(workbook: unknown, sheets: { name: string; data: unknown[]; fields: EnhancedFieldMapping[] }[]): Promise<void> {
     const summarySheet = workbook.sheet(0)
     summarySheet.name('Summary')
 
@@ -763,9 +763,9 @@ export class EnhancedExportService extends ExportJobOrchestrator {
    */
   private async createCSV<T>(data: T[], fields: EnhancedFieldMapping[], options: EnhancedExportOptions): Promise<ArrayBuffer> {
     const activeFields = fields.filter(field => field.include)
-    
+
     const csvData = data.map(row => {
-      const csvRow: Record<string, any> = {}
+      const csvRow: Record<string, unknown> = {}
       activeFields.forEach(field => {
         const value = this.getNestedValue(row, field.key)
         csvRow[field.label] = this.formatCellValue(value, field)
@@ -788,9 +788,9 @@ export class EnhancedExportService extends ExportJobOrchestrator {
    */
   private createJSON<T>(data: T[], fields: EnhancedFieldMapping[], options: EnhancedExportOptions): ArrayBuffer {
     const activeFields = fields.filter(field => field.include)
-    
+
     const jsonData = data.map(row => {
-      const jsonRow: Record<string, any> = {}
+      const jsonRow: Record<string, unknown> = {}
       activeFields.forEach(field => {
         const value = this.getNestedValue(row, field.key)
         jsonRow[field.label] = this.formatCellValue(value, field)
@@ -804,11 +804,11 @@ export class EnhancedExportService extends ExportJobOrchestrator {
   /**
    * Get nested object value using dot notation
    */
-  private getNestedValue(obj: any, path: string): any {
+  private getNestedValue(obj: unknown, path: string): unknown {
     if (!obj || !path) return undefined
-    
-    return path.split('.').reduce((current, key) => {
-      return current && current[key] !== undefined ? current[key] : undefined
+
+    return path.split('.').reduce((current: unknown, key: string) => {
+      return current && typeof current === 'object' && current !== null && key in current ? (current as Record<string, unknown>)[key] : undefined
     }, obj)
   }
 

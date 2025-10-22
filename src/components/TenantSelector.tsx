@@ -33,6 +33,8 @@ import { ChevronDown, Check, AlertCircle, Building2, RefreshCw } from 'lucide-re
 
 import { useTenantSelector } from '../hooks/useTenantSelector'
 import type { TenantOption } from '../hooks/useTenantSelector'
+import { useAuthStore } from '../stores/auth.store'
+import { tenantService } from '../api/services/tenant.service'
 import { logger } from '../utils/logger'
 
 export interface TenantSelectorProps {
@@ -53,22 +55,38 @@ export interface TenantSelectorProps {
 }
 
 /**
- * Status Dot Component
+ * Status Dot Component - Shows tenant validation status
+ * Green: Validated and accessible
+ * Red: Validation failed or no access
+ * Gray: Not yet validated
  */
-const StatusDot: React.FC<{ isActive: boolean; size?: 'sm' | 'md' }> = ({ 
-  isActive, 
-  size = 'md' 
+const StatusDot: React.FC<{
+  isActive: boolean
+  isValidated?: boolean
+  validationFailed?: boolean
+  size?: 'sm' | 'md'
+}> = ({
+  isActive,
+  isValidated = false,
+  validationFailed = false,
+  size = 'md'
 }) => {
   const dotSize = size === 'sm' ? 'h-2 w-2' : 'h-2.5 w-2.5'
-  
+
+  // Determine color based on validation state
+  let colorClass = 'bg-gray-400' // Default: not validated
+  if (validationFailed) {
+    colorClass = 'bg-red-500 shadow-sm shadow-red-500/50' // Failed validation
+  } else if (isValidated && isActive) {
+    colorClass = 'bg-green-500 shadow-sm shadow-green-500/50' // Validated and active
+  }
+
   return (
-    <div 
+    <div
       className={clsx(
         'rounded-full flex-shrink-0',
         dotSize,
-        isActive 
-          ? 'bg-green-500 shadow-sm shadow-green-500/50' 
-          : 'bg-gray-400'
+        colorClass
       )}
       aria-hidden="true"
     />
@@ -144,14 +162,72 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
     isCurrentTenant
   } = useTenantSelector()
 
+  // Get authentication state
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
+
   // Component state
   const [isOpen, setIsOpen] = useState(false)
   const [focusedIndex, setFocusedIndex] = useState(0)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isValidated, setIsValidated] = useState(false)
+  const [validationFailed, setValidationFailed] = useState(false)
+  const [isValidating, setIsValidating] = useState(false)
 
   // Refs
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const dropdownRef = useRef<HTMLDivElement | null>(null)
+
+  // Validate tenant access when authenticated and tenant changes
+  useEffect(() => {
+    const validateTenant = async () => {
+      // Only validate if authenticated and we have a current tenant
+      if (!isAuthenticated || !currentTenant) {
+        setIsValidated(false)
+        setValidationFailed(false)
+        return
+      }
+
+      // Don't validate during switching or loading
+      if (isSwitching || isLoading || isValidating) {
+        return
+      }
+
+      logger.extension.debug('Validating tenant access via /myprofile', {
+        tenantSlug: currentTenant.slug,
+        environment: currentTenant.environment
+      })
+
+      setIsValidating(true)
+
+      try {
+        // Call /myprofile to validate access
+        const hasAccess = await tenantService.checkTenantStatus(
+          currentTenant.slug,
+          currentTenant.environment
+        )
+
+        setIsValidated(hasAccess)
+        setValidationFailed(!hasAccess)
+
+        logger.extension.info('Tenant validation completed', {
+          tenantSlug: currentTenant.slug,
+          hasAccess,
+          status: hasAccess ? 'valid' : 'invalid'
+        })
+      } catch (error) {
+        logger.extension.error('Tenant validation failed', {
+          tenantSlug: currentTenant.slug,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        })
+        setIsValidated(false)
+        setValidationFailed(true)
+      } finally {
+        setIsValidating(false)
+      }
+    }
+
+    validateTenant()
+  }, [isAuthenticated, currentTenant, isSwitching, isLoading])
 
   // Floating UI setup
   const { refs, floatingStyles } = useFloating({
@@ -359,6 +435,16 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
       )
     }
 
+    // Don't show tenant name until authenticated
+    if (!isAuthenticated) {
+      return (
+        <>
+          <StatusDot isActive={false} size="sm" />
+          <span className="text-muted-foreground">Not logged in</span>
+        </>
+      )
+    }
+
     if (!currentTenant) {
       return (
         <>
@@ -368,11 +454,25 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
       )
     }
 
+    // Determine text color based on validation state
+    const textColorClass = validationFailed
+      ? 'text-red-600'
+      : isValidated
+      ? 'text-green-600'
+      : ''
+
     return (
       <>
         {showLogo && <TenantAvatar tenant={currentTenant} size="sm" />}
-        <StatusDot isActive={currentTenant.isActive} size="sm" />
-        <span className="truncate font-medium">{currentTenant.slug}</span>
+        <StatusDot
+          isActive={currentTenant.isActive}
+          isValidated={isValidated}
+          validationFailed={validationFailed}
+          size="sm"
+        />
+        <span className={clsx('truncate font-medium', textColorClass)}>
+          {currentTenant.slug}
+        </span>
         {showPlan && currentTenant.subscription && (
           <span className="text-xs text-muted-foreground px-1.5 py-0.5 bg-muted rounded">
             {currentTenant.subscription.plan}
@@ -415,7 +515,12 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
         aria-selected={isCurrent}
       >
         {showLogo && <TenantAvatar tenant={tenant} size="sm" />}
-        <StatusDot isActive={tenant.isActive} size="sm" />
+        <StatusDot
+          isActive={tenant.isActive}
+          isValidated={isCurrent && isValidated}
+          validationFailed={isCurrent && validationFailed}
+          size="sm"
+        />
 
         <div className="flex-1 min-w-0">
           <div className="truncate font-medium">{tenant.slug}</div>
@@ -470,7 +575,7 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
           className
         )}
         onClick={() => {
-          if (!disabled) {
+          if (!disabled && isAuthenticated) {
             logger.extension.info('Tenant selector dropdown toggled', {
               wasOpen: isOpen,
               willOpen: !isOpen,
@@ -481,7 +586,7 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
           }
         }}
         onKeyDown={handleKeyDown}
-        disabled={disabled || isSwitching}
+        disabled={disabled || isSwitching || !isAuthenticated}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label="Select tenant"

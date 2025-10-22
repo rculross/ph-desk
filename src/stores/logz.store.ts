@@ -12,11 +12,9 @@ import type {
   LogzStore,
   LogsFilterState,
   PaginationState,
-  ParsedLogEntry,
   EntityCache,
   UserEntity,
   CompanyEntity,
-  LOGZ_CONSTRAINTS,
   QuickDateFilter
 } from '../types/logz.types'
 import { logger } from '../utils/logger'
@@ -109,9 +107,9 @@ export const useLogzStore = create<LogzStore>((set, get) => ({
       to: updatedPagination
     })
 
-    set(state => ({
+    set({
       pagination: updatedPagination
-    }))
+    })
   },
 
   // Data actions

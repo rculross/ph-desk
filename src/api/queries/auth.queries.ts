@@ -3,7 +3,7 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { useAuthStore } from '../../stores/auth.store'
-import type { UserInfo, TenantContext, AuthError } from '../../types'
+import type { TenantContext, AuthError } from '../../types'
 import { logger } from '../../utils/logger'
 import { authService, type AuthSession } from '../auth'
 import { getEntityCacheConfig } from '../config'

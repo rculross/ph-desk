@@ -8,8 +8,8 @@
 import { format } from 'date-fns'
 
 // Dynamic imports for Excel libraries to prevent service worker issues
-let parseCSV: any, unparseCSV: any
-let XLSXUtils: any, writeXLSX: any
+let parseCSV: ((input: string, config?: unknown) => unknown) | undefined, unparseCSV: ((data: unknown, config?: unknown) => string) | undefined
+let XLSXUtils: unknown, writeXLSX: unknown
 
 // Lazy load CSV and Excel libraries
 async function loadCSVLibrary() {
@@ -57,7 +57,7 @@ export interface ExportConfig {
 
 
 
-export interface ExportRequest<T = any> {
+export interface ExportRequest<T = unknown> {
   data: T[]
   format: ExportFormat
   filename: string
@@ -66,7 +66,7 @@ export interface ExportRequest<T = any> {
   entityType: EntityType
 }
 
-export interface StreamingExportRequest<T = any> {
+export interface StreamingExportRequest<T = unknown> {
   dataProvider: (offset: number, limit: number) => Promise<{ data: T[]; total: number }>
   format: ExportFormat
   filename: string
@@ -101,7 +101,7 @@ export class ExportService extends ExportJobOrchestrator {
   /**
    * Start a new export job with progress tracking
    */
-  async startExport<T = any>(request: ExportRequest<T>): Promise<string> {
+  async startExport<T = unknown>(request: ExportRequest<T>): Promise<string> {
     const { jobId, signal } = this.initializeJob({ totalRecords: request.data.length })
 
     this.log.info('Starting export job', {
@@ -128,7 +128,7 @@ export class ExportService extends ExportJobOrchestrator {
   /**
    * Start a streaming export for large datasets
    */
-  async startStreamingExport<T = any>(request: StreamingExportRequest<T>): Promise<string> {
+  async startStreamingExport<T = unknown>(request: StreamingExportRequest<T>): Promise<string> {
     // Get total count if not provided
     let totalRecords = request.totalRecords
     if (!totalRecords) {
@@ -316,7 +316,7 @@ export class ExportService extends ExportJobOrchestrator {
       
       this.updateProgress(jobId, { status: 'processing', progress: 5 })
 
-      const chunks: any[] = []
+      const chunks: Record<string, unknown>[] = []
       let processedRecords = 0
       let offset = 0
       let batchNumber = 0
@@ -529,7 +529,7 @@ export class ExportService extends ExportJobOrchestrator {
     data: T[],
     fields: FieldMapping[],
     options: ExportOptions
-  ): Promise<Record<string, any>[]> {
+  ): Promise<Record<string, unknown>[]> {
     const activeFields = fields.filter(field => field.include)
 
     // For small datasets, use synchronous processing
@@ -566,12 +566,12 @@ export class ExportService extends ExportJobOrchestrator {
     item: T,
     activeFields: FieldMapping[],
     options: ExportOptions
-  ): Record<string, any> {
-    const transformedItem: Record<string, any> = {}
+  ): Record<string, unknown> {
+    const transformedItem: Record<string, unknown> = {}
 
     activeFields.forEach(field => {
       const rawValue = this.getNestedValue(item, field.key)
-      let formattedValue: any
+      let formattedValue: unknown
 
       if (field.formatter) {
         formattedValue = field.formatter(rawValue)
@@ -589,7 +589,7 @@ export class ExportService extends ExportJobOrchestrator {
    * Generate CSV content
    */
   private async generateCSV(
-    data: Record<string, any>[],
+    data: Record<string, unknown>[],
     fields: FieldMapping[],
     options: ExportOptions
   ): Promise<string> {
@@ -623,7 +623,7 @@ export class ExportService extends ExportJobOrchestrator {
   /**
    * Generate JSON content
    */
-  private generateJSON(data: Record<string, any>[], options: ExportOptions): string {
+  private generateJSON(data: Record<string, unknown>[], options: ExportOptions): string {
     const jsonData = {
       exportInfo: {
         exportedAt: new Date().toISOString(),
@@ -641,18 +641,18 @@ export class ExportService extends ExportJobOrchestrator {
    * Generate Excel content
    */
   private async generateExcel(
-    data: Record<string, any>[],
+    data: Record<string, unknown>[],
     fields: FieldMapping[],
     options: ExportOptions
   ): Promise<ArrayBuffer> {
     const { XLSXUtils: utils, writeXLSX: write } = await loadXLSXLibrary()
-    
-    const workbook: any = utils.book_new()
+
+    const workbook = (utils as { book_new: () => unknown }).book_new()
     const activeFields = fields.filter(field => field.include)
 
     // Prepare data for Excel
     const worksheetData = data.map(row => {
-      const excelRow: Record<string, any> = {}
+      const excelRow: Record<string, unknown> = {}
       activeFields.forEach(field => {
         excelRow[field.label] = row[field.label] ?? ''
       })
@@ -660,10 +660,10 @@ export class ExportService extends ExportJobOrchestrator {
     })
 
     // Create worksheet
-    const worksheet: any = utils.json_to_sheet(worksheetData)
+    const worksheet = (utils as { json_to_sheet: (data: unknown) => unknown }).json_to_sheet(worksheetData)
 
     // Add worksheet to workbook
-    utils.book_append_sheet(workbook, worksheet, 'Export Data')
+    ;(utils as { book_append_sheet: (book: unknown, sheet: unknown, name: string) => void }).book_append_sheet(workbook, worksheet, 'Export Data')
 
     // Add metadata sheet
     const metaData = [
@@ -677,11 +677,11 @@ export class ExportService extends ExportJobOrchestrator {
       ...activeFields.map(field => [field.label, field.key])
     ]
 
-    const metaWorksheet: any = utils.aoa_to_sheet(metaData)
-    utils.book_append_sheet(workbook, metaWorksheet, 'Export Info')
+    const metaWorksheet = (utils as { aoa_to_sheet: (data: unknown) => unknown }).aoa_to_sheet(metaData)
+    ;(utils as { book_append_sheet: (book: unknown, sheet: unknown, name: string) => void }).book_append_sheet(workbook, metaWorksheet, 'Export Info')
 
     // Generate Excel file
-    return write(workbook, {
+    return (write as (book: unknown, options: unknown) => ArrayBuffer)(workbook, {
       type: 'array',
       bookType: 'xlsx',
       compression: true
@@ -691,16 +691,16 @@ export class ExportService extends ExportJobOrchestrator {
   /**
    * Get nested object value using dot notation
    */
-  private getNestedValue(obj: any, path: string): any {
-    return path.split('.').reduce((current, key) => {
-      return current && current[key] !== undefined ? current[key] : undefined
+  private getNestedValue(obj: unknown, path: string): unknown {
+    return path.split('.').reduce((current: unknown, key: string) => {
+      return current && typeof current === 'object' && current !== null && key in current ? (current as Record<string, unknown>)[key] : undefined
     }, obj)
   }
 
   /**
    * Format value based on type and options
    */
-  private formatValue(value: any, type: FieldMapping['type'], options: ExportOptions): any {
+  private formatValue(value: unknown, type: FieldMapping['type'], options: ExportOptions): unknown {
     if (value == null) return ''
 
     switch (type) {
