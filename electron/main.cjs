@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, safeStorage } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, safeStorage, globalShortcut } = require('electron');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -10,6 +10,12 @@ const {
   getCurrentCookies,
   clearCookies
 } = require('./auth-window.cjs');
+const {
+  openPlanhatBrowser,
+  closePlanhatBrowser,
+  togglePlanhatBrowser,
+  isPlanhatBrowserOpen
+} = require('./planhat-browser.cjs');
 const { initializeMenu, setMainWindow: setMenuMainWindow, setPreferencesGetter } = require('./menu.cjs');
 const { getPreferencesSchema } = require('./config/preferences-schema.cjs');
 
@@ -438,6 +444,33 @@ app.whenReady().then(async () => {
 
   createWindow();
 
+  // Register global keyboard shortcuts for DevTools
+  // Support both Chrome (Cmd+Option+J) and Electron (Cmd+Option+I) shortcuts on macOS
+  if (process.platform === 'darwin') {
+    globalShortcut.register('CommandOrControl+Option+J', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.toggleDevTools();
+      }
+    });
+    globalShortcut.register('CommandOrControl+Option+I', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.toggleDevTools();
+      }
+    });
+  } else {
+    // Windows/Linux: Ctrl+Shift+I and Ctrl+Shift+J
+    globalShortcut.register('CommandOrControl+Shift+I', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.toggleDevTools();
+      }
+    });
+    globalShortcut.register('CommandOrControl+Shift+J', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.toggleDevTools();
+      }
+    });
+  }
+
   app.on('activate', () => {
     // On macOS, re-create window when dock icon is clicked and no windows are open
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -451,6 +484,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// Unregister all shortcuts when app quits
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
 });
 
 // Handle any uncaught errors
@@ -787,6 +825,66 @@ ipcMain.handle('auth:logout', async () => {
 });
 
 // ============================================================================
+// Planhat Browser IPC Handlers
+// ============================================================================
+
+/**
+ * Open Planhat browser window
+ * @returns {Promise<void>}
+ */
+ipcMain.handle('planhat-browser:open', async () => {
+  try {
+    await openPlanhatBrowser();
+    console.log('[Main] Planhat browser window opened');
+  } catch (error) {
+    console.error('[Main] Error opening Planhat browser:', error);
+    throw error;
+  }
+});
+
+/**
+ * Close Planhat browser window
+ * @returns {Promise<void>}
+ */
+ipcMain.handle('planhat-browser:close', async () => {
+  try {
+    await closePlanhatBrowser();
+    console.log('[Main] Planhat browser window closed');
+  } catch (error) {
+    console.error('[Main] Error closing Planhat browser:', error);
+    throw error;
+  }
+});
+
+/**
+ * Toggle Planhat browser window
+ * @returns {Promise<void>}
+ */
+ipcMain.handle('planhat-browser:toggle', async () => {
+  try {
+    await togglePlanhatBrowser();
+    console.log('[Main] Planhat browser window toggled');
+  } catch (error) {
+    console.error('[Main] Error toggling Planhat browser:', error);
+    throw error;
+  }
+});
+
+/**
+ * Check if Planhat browser window is open
+ * @returns {Promise<boolean>}
+ */
+ipcMain.handle('planhat-browser:is-open', async () => {
+  try {
+    const isOpen = await isPlanhatBrowserOpen();
+    return isOpen;
+  } catch (error) {
+    console.error('[Main] Error checking Planhat browser status:', error);
+    return false;
+  }
+});
+
+// ============================================================================
 // Window IPC Handlers
 // ============================================================================
 
@@ -803,6 +901,50 @@ ipcMain.handle('window:setTitle', async (event, title) => {
     }
   } catch (error) {
     console.error('[Main] Error setting window title:', error);
+    throw error;
+  }
+});
+
+// ============================================================================
+// Sample Data IPC Handlers
+// ============================================================================
+
+/**
+ * Open folder picker dialog
+ * @returns {Promise<string|null>} Selected folder path or null if cancelled
+ */
+ipcMain.handle('sample-data:select-folder', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory', 'createDirectory'],
+      title: 'Select Folder for Sample Data',
+      buttonLabel: 'Select Folder'
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return result.filePaths[0];
+  } catch (error) {
+    console.error('[Main] Error opening folder picker:', error);
+    throw error;
+  }
+});
+
+/**
+ * Write JSON file to disk
+ * @param {string} filePath - Full path to the file
+ * @param {object} data - Data to write (will be JSON stringified)
+ * @returns {Promise<void>}
+ */
+ipcMain.handle('sample-data:write-file', async (event, filePath, data) => {
+  try {
+    const jsonContent = JSON.stringify(data, null, 2);
+    await fs.promises.writeFile(filePath, jsonContent, 'utf-8');
+    console.log(`[Main] Sample data file written: ${filePath}`);
+  } catch (error) {
+    console.error('[Main] Error writing sample data file:', error);
     throw error;
   }
 });

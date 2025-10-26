@@ -159,30 +159,26 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
         return formatTenantOption(tenant, tenantStatus)
       })
 
-    // Filter out ALL tenants where we don't have access (both production and demo)
-    // Only show tenants where /myprofile check succeeded (isActive = true)
+    // Filter tenants: Show ALL production tenants (active + inactive), hide inactive demo tenants
+    // Production tenants show with green (active) or grey (inactive) dots
+    // Demo tenants only show if active
     const filteredTenants: TenantOption[] = []
-    const inactiveProdTenants: string[] = []
     const inactiveDemoTenants: string[] = []
 
     formatted.forEach(tenant => {
       if (tenant.isActive) {
-        // Only include tenants where /myprofile returned 200
+        // Include all active tenants (production and demo)
+        filteredTenants.push(tenant)
+      } else if (tenant.environment === 'production') {
+        // Include inactive production tenants (will show with grey dot)
         filteredTenants.push(tenant)
       } else {
-        // Collect inactive tenants for logging
-        if (tenant.environment === 'production') {
-          inactiveProdTenants.push(tenant.slug)
-        } else {
-          inactiveDemoTenants.push(tenant.slug)
-        }
+        // Inactive demo tenants - don't include, just log
+        inactiveDemoTenants.push(tenant.slug)
       }
     })
 
-    // Log filtered tenants
-    if (inactiveProdTenants.length > 0) {
-      log.debug(`Filtered out inactive production tenants (no access): ${inactiveProdTenants.join(', ')}`)
-    }
+    // Log filtered demo tenants
     if (inactiveDemoTenants.length > 0) {
       log.debug(`Filtered out inactive demo tenants (no access): ${inactiveDemoTenants.join(', ')}`)
     }
@@ -204,13 +200,13 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
     const activeCount = sortedTenants.filter(t => t.isActive).length
     const prodCount = sortedTenants.filter(t => t.environment === 'production').length
     const demoCount = sortedTenants.filter(t => t.environment === 'demo').length
-    const filteredOutCount = inactiveProdTenants.length + inactiveDemoTenants.length
+    const filteredOutCount = inactiveDemoTenants.length
 
     if (filteredOutCount > 0) {
-      log.info(`Filtered out ${filteredOutCount} tenants without access (${inactiveProdTenants.length} prod, ${inactiveDemoTenants.length} demo)`)
+      log.info(`Filtered out ${filteredOutCount} inactive demo tenants`)
     }
 
-    log.debug(`Available tenants (with access only): ${sortedTenants.length} total (${prodCount} prod, ${demoCount} demo, all active)`)
+    log.debug(`Available tenants: ${sortedTenants.length} total (${prodCount} prod [${activeCount} active], ${demoCount} demo [all active])`)
 
     return sortedTenants
   }, [rawAvailableTenants, tenantStatuses, getTenantStatus, log])

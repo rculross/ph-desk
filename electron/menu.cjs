@@ -79,6 +79,15 @@ function createMenu() {
       label: 'File',
       submenu: [
         {
+          label: 'Get Sample Data...',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('menu:get-sample-data');
+            }
+          }
+        },
+        { type: 'separator' },
+        {
           label: 'Preferences...',
           accelerator: 'CmdOrCtrl+,',
           click: openPreferencesWindow
@@ -109,14 +118,21 @@ function createMenu() {
       submenu: [
         { role: 'reload' },
         { role: 'forceReload' },
+        {
+          label: 'Toggle Developer Tools',
+          accelerator: isMac ? 'Alt+Command+I' : 'Ctrl+Shift+I',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.toggleDevTools();
+            }
+          }
+        },
         { type: 'separator' },
         { role: 'resetZoom' },
         { role: 'zoomIn' },
         { role: 'zoomOut' },
         { type: 'separator' },
-        { role: 'togglefullscreen' },
-        { type: 'separator' },
-        { role: 'toggleDevTools' }
+        { role: 'togglefullscreen' }
       ]
     },
 

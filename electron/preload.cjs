@@ -112,5 +112,60 @@ contextBridge.exposeInMainWorld('electron', {
      * @returns {Promise<void>}
      */
     setTitle: (title) => ipcRenderer.invoke('window:setTitle', title)
+  },
+
+  // Planhat Browser APIs
+  planhatBrowser: {
+    /**
+     * Open Planhat browser window
+     * @returns {Promise<void>}
+     */
+    open: () => ipcRenderer.invoke('planhat-browser:open'),
+
+    /**
+     * Close Planhat browser window
+     * @returns {Promise<void>}
+     */
+    close: () => ipcRenderer.invoke('planhat-browser:close'),
+
+    /**
+     * Toggle Planhat browser window (open if closed, close if open)
+     * @returns {Promise<void>}
+     */
+    toggle: () => ipcRenderer.invoke('planhat-browser:toggle'),
+
+    /**
+     * Check if Planhat browser window is open
+     * @returns {Promise<boolean>}
+     */
+    isOpen: () => ipcRenderer.invoke('planhat-browser:is-open')
+  },
+
+  // Sample Data APIs
+  sampleData: {
+    /**
+     * Open folder picker dialog
+     * @returns {Promise<string|null>} Selected folder path or null if cancelled
+     */
+    selectFolder: () => ipcRenderer.invoke('sample-data:select-folder'),
+
+    /**
+     * Write JSON file to disk
+     * @param {string} filePath - Full path to the file
+     * @param {object} data - Data to write (will be JSON stringified)
+     * @returns {Promise<void>}
+     */
+    writeFile: (filePath, data) => ipcRenderer.invoke('sample-data:write-file', filePath, data),
+
+    /**
+     * Listen for menu trigger to get sample data
+     * @param {Function} callback - Callback function to invoke when triggered
+     * @returns {Function} Cleanup function to remove listener
+     */
+    onGetSampleData: (callback) => {
+      const handler = () => callback();
+      ipcRenderer.on('menu:get-sample-data', handler);
+      return () => ipcRenderer.removeListener('menu:get-sample-data', handler);
+    }
   }
 });

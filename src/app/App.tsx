@@ -14,17 +14,20 @@ import {
   BrainIcon,
   LinkIcon,
   NetworkIcon,
-  HomeIcon
+  HomeIcon,
+  ExternalLinkIcon
 } from 'lucide-react'
 import { Toaster } from 'react-hot-toast'
 
 import { useCurrentUser } from '@/api/queries/auth.queries'
 import { LLMSettings } from '@/components/llm/LLMSettings'
 import { LogSettings } from '@/components/settings/LogSettings'
+import { TenantSelector } from '@/components/TenantSelector'
 import { APP_VERSION } from '@/config/version'
 import { useExtendedSettings } from '@/hooks/useExtendedSettings'
 import { authService } from '@/services/auth.service'
 import { fieldDetectionService } from '@/services/field-detection.service'
+import { planhatBrowserService } from '@/services/planhat-browser.service'
 import { useActiveTenant } from '@/stores/tenant.store'
 import type { ExtendedUserSettings } from '@/types/settings'
 import { logger } from '@/utils/logger'
@@ -40,6 +43,9 @@ import { LogzExplorer } from './components/LogzExplorer'
 // Preferences component removed - now using native electron-preferences dialog (File -> Preferences)
 import { SalesforceIntegration } from './components/SalesforceIntegration'
 import { WorkflowTemplateExporter } from './components/WorkflowExporter'
+import { SampleDataProgressModal } from '../components/SampleDataProgress'
+import { sampleDataService, type SampleDataProgress } from '../services/sample-data.service'
+import toast from 'react-hot-toast'
 
 // Navigation items
 type NavItem = 'home' | 'issues' | 'workflows' | 'flex' | 'settings' | 'salesforce-integration' | 'logz-explorer' | 'llm-integration' | 'connected-apis' | 'endpoints'
@@ -143,6 +149,18 @@ export const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isCheckingAuth, setIsCheckingAuth] = useState(true)
 
+  // Sample Data state
+  const [isSampleDataModalOpen, setIsSampleDataModalOpen] = useState(false)
+  const [sampleDataProgress, setSampleDataProgress] = useState<SampleDataProgress>({
+    currentEndpoint: '',
+    currentIndex: 0,
+    totalEndpoints: sampleDataService.getTotalEndpoints(),
+    completed: 0,
+    failed: 0,
+    errors: [],
+    isComplete: false
+  })
+
   // Move useExtendedSettings hook here to avoid conditional Hook calls
   const extendedSettings = useExtendedSettings()
 
@@ -237,6 +255,79 @@ export const App: React.FC = () => {
   const handleDropdownToggle = (category: string, isOpen: boolean) => {
     setOpenDropdown(isOpen ? category : null)
   }
+
+  // Handle Open Planhat button click
+  const handleOpenPlanhat = async () => {
+    try {
+      log.info('[App] Opening Planhat browser window...')
+      await planhatBrowserService.togglePlanhatBrowser()
+    } catch (error) {
+      log.error('[App] Error opening Planhat browser', { error })
+    }
+  }
+
+  // Handle Get Sample Data menu trigger
+  const handleGetSampleData = async () => {
+    try {
+      // Check if user is logged in
+      if (!isAuthenticated || !currentTenant) {
+        toast.error('Please login and select a tenant first')
+        return
+      }
+
+      log.info('[App] Starting sample data collection...')
+
+      // Open folder picker
+      const folderPath = await window.electron.sampleData.selectFolder()
+
+      if (!folderPath) {
+        log.info('[App] User cancelled folder selection')
+        return
+      }
+
+      log.info('[App] User selected folder:', folderPath)
+
+      // Reset progress and open modal
+      setSampleDataProgress({
+        currentEndpoint: '',
+        currentIndex: 0,
+        totalEndpoints: sampleDataService.getTotalEndpoints(),
+        completed: 0,
+        failed: 0,
+        errors: [],
+        isComplete: false
+      })
+      setIsSampleDataModalOpen(true)
+
+      // Start collection
+      await sampleDataService.collectSampleData(
+        folderPath,
+        currentTenant.slug,
+        (progress) => {
+          setSampleDataProgress(progress)
+        }
+      )
+
+      toast.success('Sample data collection complete!')
+    } catch (error) {
+      log.error('[App] Error collecting sample data', { error })
+      toast.error(`Failed to collect sample data: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  // Listen for menu trigger
+  useEffect(() => {
+    if (!window.electron?.sampleData?.onGetSampleData) {
+      return
+    }
+
+    const cleanup = window.electron.sampleData.onGetSampleData(() => {
+      log.info('[App] Sample data menu item triggered')
+      handleGetSampleData()
+    })
+
+    return cleanup
+  }, [isAuthenticated, currentTenant, log])
 
 
   const renderContent = (): React.ReactElement => {
@@ -381,6 +472,16 @@ export const App: React.FC = () => {
                 </div>
               </div>
               <div className='flex items-center gap-3'>
+                {/* Open Planhat button */}
+                <button
+                  onClick={handleOpenPlanhat}
+                  className='flex items-center gap-1.5 px-2 py-1 text-sm font-medium transition-colors rounded-md text-gray-700 hover:text-gray-900 hover:bg-gray-100'
+                  title='Open Planhat in a separate browser window'
+                >
+                  <ExternalLinkIcon className='h-4 w-4' />
+                  Browse Planhat
+                </button>
+
                 {/* Settings moved to right side */}
                 <button
                   onClick={() => handleTabChange('settings', 'direct-nav')}
@@ -395,20 +496,8 @@ export const App: React.FC = () => {
                   Settings
                 </button>
 
-                {/* Tenant Display */}
-                {currentTenant ? (
-                  <span
-                    className={clsx(
-                      'text-sm font-semibold',
-                      isConnected ? 'text-green-900' : 'text-red-600'
-                    )}
-                    title={isConnected ? 'Connected to tenant' : 'Not connected to tenant'}
-                  >
-                    {currentTenant.slug}
-                  </span>
-                ) : (
-                  <span className='text-sm text-gray-500 italic'>No tenant selected</span>
-                )}
+                {/* Tenant Selector */}
+                <TenantSelector size="md" showLogo={false} showPlan={false} />
               </div>
             </div>
           </div>
@@ -449,6 +538,19 @@ export const App: React.FC = () => {
           }}
         />
         </div>
+
+        {/* Sample Data Progress Modal */}
+        <SampleDataProgressModal
+          progress={sampleDataProgress}
+          isOpen={isSampleDataModalOpen}
+          onClose={() => setIsSampleDataModalOpen(false)}
+        />
+
+        {/* Floating Export Progress */}
+        <FloatingExportProgress />
+
+        {/* Toast Notifications */}
+        <Toaster position="top-right" />
     </ConfigProvider>
   )
 }

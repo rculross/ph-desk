@@ -134,12 +134,63 @@ export interface ElectronWindow {
   setTitle(title: string): Promise<void>;
 }
 
+export interface ElectronPlanhatBrowser {
+  /**
+   * Open Planhat browser window
+   * @returns Promise that resolves when window is opened
+   */
+  open(): Promise<void>;
+
+  /**
+   * Close Planhat browser window
+   * @returns Promise that resolves when window is closed
+   */
+  close(): Promise<void>;
+
+  /**
+   * Toggle Planhat browser window (open if closed, close if open)
+   * @returns Promise that resolves when toggle is complete
+   */
+  toggle(): Promise<void>;
+
+  /**
+   * Check if Planhat browser window is open
+   * @returns Promise resolving to open status
+   */
+  isOpen(): Promise<boolean>;
+}
+
+export interface ElectronSampleData {
+  /**
+   * Open folder picker dialog
+   * @returns Promise resolving to selected folder path or null if cancelled
+   */
+  selectFolder(): Promise<string | null>;
+
+  /**
+   * Write JSON file to disk
+   * @param filePath - Full path to the file
+   * @param data - Data to write (will be JSON stringified)
+   * @returns Promise that resolves when file is written
+   */
+  writeFile(filePath: string, data: any): Promise<void>;
+
+  /**
+   * Listen for menu trigger to get sample data
+   * @param callback - Callback function to invoke when triggered
+   * @returns Cleanup function to remove listener
+   */
+  onGetSampleData(callback: () => void): () => void;
+}
+
 export interface ElectronAPI {
   platform: string;
   storage: ElectronStorage;
   auth: ElectronAuth;
   files: ElectronFiles;
   window: ElectronWindow;
+  planhatBrowser: ElectronPlanhatBrowser;
+  sampleData: ElectronSampleData;
 }
 
 declare global {

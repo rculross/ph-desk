@@ -284,7 +284,7 @@ npx vitest --watch
 When modifying `electron/*.cjs` files, **restart the entire dev process** (kill and re-run `npm run dev`). Hot reload only works for React code.
 
 ### Authentication Development
-- Login window loads real Planhat login page (`https://app.planhat.com`)
+- Login window loads real Planhat login page (`https://ws.planhat.com`)
 - Cookies are managed in Electron session and persisted via electron-store
 - Test with different tenants using the TenantSelector component
 

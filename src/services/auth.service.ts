@@ -6,6 +6,7 @@
  */
 
 import type { AuthResult, StoredAuthData, PlanhatCookie } from '../types/electron'
+import { setTenantSlug } from '../api/client/http-client'
 import { logger } from '../utils/logger'
 
 const log = logger.api
@@ -57,6 +58,9 @@ class AuthService {
             lastLogin: storedAuth.lastLogin
           }
 
+          // CRITICAL FIX: Update HTTP client with tenant slug after session restore
+          setTenantSlug(storedAuth.tenantSlug)
+
           log.info('[Auth] Session restored successfully', {
             tenantSlug: this.authState.tenantSlug,
             environment: this.authState.environment
@@ -97,6 +101,9 @@ class AuthService {
         environment: authResult.environment,
         lastLogin: Date.now()
       }
+
+      // CRITICAL FIX: Update HTTP client with tenant slug after login
+      setTenantSlug(authResult.tenantSlug)
 
       this.notifyAuthChange()
 
@@ -219,6 +226,9 @@ class AuthService {
       environment: 'production',
       lastLogin: null
     }
+
+    // Clear tenant slug from HTTP client
+    setTenantSlug(undefined)
 
     this.notifyAuthChange()
   }
