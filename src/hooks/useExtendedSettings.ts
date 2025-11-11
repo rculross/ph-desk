@@ -1,34 +1,35 @@
 /**
- * Extended settings hook for managing all application settings
+ * Unified settings hook for managing all application settings
+ * Replaces both electron-preferences and previous in-app settings
  */
 
 import { useCallback, useEffect, useState } from 'react'
 
-import { ExtendedUserSettings, defaultExtendedSettings } from '../types/settings'
+import { AppSettings, defaultAppSettings } from '../types/settings'
 import { logger } from '../utils/logger'
 
-const STORAGE_KEY = 'extension-settings'
+const STORAGE_KEY = 'app-settings'
 
 /**
- * Hook for managing extended settings with auto-save functionality
+ * Hook for managing unified application settings with auto-save functionality
  */
 export function useExtendedSettings() {
   const log = logger.extension // Using extension context as this is primarily used in UI contexts
-  
-  const [settings, setSettings] = useState<ExtendedUserSettings>(defaultExtendedSettings)
+
+  const [settings, setSettings] = useState<AppSettings>(defaultAppSettings)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  
+
   log.debug('useExtendedSettings hook initialized')
 
   // Load settings on mount
   useEffect(() => {
     const loadSettings = async () => {
-      log.info('Loading extended settings from storage')
-      
+      log.info('Loading application settings from storage')
+
       // Check if Electron APIs are available
-      if (!window.electron.storage) {
+      if (!window.electron?.storage) {
         log.warn('Electron storage API not available, using defaults')
         setLoading(false)
         return
@@ -38,40 +39,56 @@ export function useExtendedSettings() {
         const result = await window.electron.storage.get([STORAGE_KEY])
         if (result[STORAGE_KEY]) {
           log.debug('Found saved settings in storage')
-          
+
           const { safeJsonParse } = await import('../utils/secure-json')
-          const savedSettings = safeJsonParse(result[STORAGE_KEY], defaultExtendedSettings, {
+          const savedSettings = safeJsonParse(result[STORAGE_KEY], defaultAppSettings, {
             maxSize: 50 * 1024, // 50KB limit for settings
             maxDepth: 8,
             maxKeys: 200,
             allowedTypes: ['object', 'array', 'string', 'number', 'boolean', 'null']
           })
-          
-          // Merge with defaults to ensure all fields exist
-          const mergedSettings: ExtendedUserSettings = {
-            ...defaultExtendedSettings,
+
+          // Deep merge with defaults to ensure all fields exist
+          const mergedSettings: AppSettings = {
+            ...defaultAppSettings,
             ...savedSettings,
+            general: {
+              ...defaultAppSettings.general,
+              ...savedSettings.general
+            },
             export: {
-              ...defaultExtendedSettings.export,
+              ...defaultAppSettings.export,
               ...savedSettings.export
             },
-            performance: {
-              ...defaultExtendedSettings.performance,
-              ...savedSettings.performance
-            },
             api: {
-              ...defaultExtendedSettings.api,
-              ...savedSettings.api
+              ...defaultAppSettings.api,
+              ...savedSettings.api,
+              rateLimiting: {
+                ...defaultAppSettings.api.rateLimiting,
+                ...savedSettings.api?.rateLimiting
+              }
+            },
+            performance: {
+              ...defaultAppSettings.performance,
+              ...savedSettings.performance,
+              caching: {
+                ...defaultAppSettings.performance.caching,
+                ...savedSettings.performance?.caching
+              }
+            },
+            advanced: {
+              ...defaultAppSettings.advanced,
+              ...savedSettings.advanced
             },
             notifications: {
-              ...defaultExtendedSettings.notifications,
+              ...defaultAppSettings.notifications,
               ...savedSettings.notifications
             }
           }
-          
+
           setSettings(mergedSettings)
           log.info('Settings loaded successfully', {
-            hasCustomizations: JSON.stringify(savedSettings) !== JSON.stringify(defaultExtendedSettings)
+            hasCustomizations: JSON.stringify(savedSettings) !== JSON.stringify(defaultAppSettings)
           })
         } else {
           log.warn('No saved settings found, using defaults')
@@ -89,7 +106,7 @@ export function useExtendedSettings() {
   }, [log])
 
   // Save settings to storage
-  const saveSettings = useCallback(async (newSettings: ExtendedUserSettings) => {
+  const saveSettings = useCallback(async (newSettings: AppSettings) => {
     log.info('Saving settings to storage')
     setSaving(true)
     setError(null)
@@ -121,21 +138,21 @@ export function useExtendedSettings() {
   }, [log])
 
   // Update a specific setting with auto-save
-  const updateSetting = useCallback(async <K extends keyof ExtendedUserSettings>(
+  const updateSetting = useCallback(async <K extends keyof AppSettings>(
     key: K,
-    value: ExtendedUserSettings[K] | ((prev: ExtendedUserSettings[K]) => ExtendedUserSettings[K])
+    value: AppSettings[K] | ((prev: AppSettings[K]) => AppSettings[K])
   ) => {
     log.debug('Updating setting', { key, valueType: typeof value })
-    
+
     setSettings(prev => {
       const newValue = typeof value === 'function' ? value(prev[key]) : value
       const newSettings = {
         ...prev,
         [key]: newValue
       }
-      
+
       log.info('Setting updated', { key, hasChanges: JSON.stringify(newValue) !== JSON.stringify(prev[key]) })
-      
+
       // Save automatically
       saveSettings(newSettings).catch(err => {
         log.error('Failed to save setting update', { key, error: err?.message })
@@ -148,15 +165,15 @@ export function useExtendedSettings() {
 
   // Update a nested setting
   const updateNestedSetting = useCallback(async <
-    K extends keyof ExtendedUserSettings,
-    NK extends keyof ExtendedUserSettings[K]
+    K extends keyof AppSettings,
+    NK extends keyof AppSettings[K]
   >(
     category: K,
     key: NK,
-    value: ExtendedUserSettings[K][NK]
+    value: AppSettings[K][NK]
   ) => {
     log.debug('Updating nested setting', { category, key, valueType: typeof value })
-    
+
     setSettings(prev => {
       const oldValue = (prev[category] as any)?.[key]
       const newSettings = {
@@ -166,13 +183,13 @@ export function useExtendedSettings() {
           [key]: value
         }
       }
-      
-      log.info('Nested setting updated', { 
-        category, 
-        key, 
-        hasChanges: JSON.stringify(value) !== JSON.stringify(oldValue) 
+
+      log.info('Nested setting updated', {
+        category,
+        key,
+        hasChanges: JSON.stringify(value) !== JSON.stringify(oldValue)
       })
-      
+
       // Save automatically
       saveSettings(newSettings).catch(err => {
         log.error('Failed to save nested setting update', { category, key, error: err?.message })
@@ -192,8 +209,8 @@ export function useExtendedSettings() {
     updateNestedSetting,
     resetToDefaults: async () => {
       log.info('Resetting settings to defaults')
-      setSettings(defaultExtendedSettings)
-      await saveSettings(defaultExtendedSettings)
+      setSettings(defaultAppSettings)
+      await saveSettings(defaultAppSettings)
       log.info('Settings reset to defaults completed')
     }
   }

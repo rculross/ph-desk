@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect } from 'react'
 
-import { Card, Button, Form, Input, Select, Alert, Space, Divider, Tooltip, Progress, Statistic, Table, Switch, Typography } from 'antd'
+import { Card, Button, Form, Input, Alert, Space, Tooltip, Statistic, Table, Switch, Typography, Modal } from 'antd'
 import { clsx } from 'clsx'
 import {
   BrainIcon,
@@ -17,19 +17,22 @@ import {
   AlertCircleIcon,
   LockIcon,
   TestTubeIcon,
-  DollarSignIcon,
-  ActivityIcon,
   SettingsIcon,
-  ListIcon
+  ListIcon,
+  TrashIcon,
+  AlertTriangleIcon,
+  InfoIcon
 } from 'lucide-react'
-import toast from 'react-hot-toast'
+
+import { toastService } from '@/services/toast.service'
 
 import { apiKeyManagerService } from '../../services/api-key-manager.service'
+import { autoUnlockService } from '../../services/auto-unlock.service'
+import { getDefaultPin } from '../../services/default-pin.service'
 import { llmService } from '../../services/llm.service'
 import { pinProtectionService } from '../../services/pin-protection.service'
 import type { LLMProvider, LLMModel } from '../../types/llm'
 import { logger } from '../../utils/logger'
-import { storageManager } from '../../utils/storage-manager'
 
 const { Text } = Typography
 
@@ -72,6 +75,8 @@ export const LLMSettings: React.FC = () => {
   const [models, setModels] = useState<ModelStatus[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
   const [showModelManagement, setShowModelManagement] = useState(false)
+  const [showResetConfirmation, setShowResetConfirmation] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
   const PROVIDER_INFO = {
     claude: { name: 'Anthropic Claude', keyPlaceholder: 'sk-ant-api03-...' },
@@ -79,31 +84,15 @@ export const LLMSettings: React.FC = () => {
     gemini: { name: 'Google Gemini', keyPlaceholder: 'AI...' }
   }
 
-  // Generate default PIN from current date (MMDDYY)
-  const getDefaultPin = (): string => {
-    const now = new Date()
-    const month = (now.getMonth() + 1).toString().padStart(2, '0')
-    const day = now.getDate().toString().padStart(2, '0')
-    const year = now.getFullYear().toString().slice(-2)
-    return `${month}${day}${year}`
-  }
-
   useEffect(() => {
-    loadStatus()
+    void loadStatus()
   }, [])
 
   const loadStatus = async () => {
     try {
-      // Always try to unlock session with default PIN first
-      const defaultPin = getDefaultPin()
-      try {
-        await pinProtectionService.verifyPin(defaultPin)
-        setIsSessionValid(true)
-        log.debug('Auto-unlocked session with default PIN')
-      } catch {
-        // If default PIN fails, check if session is already valid
-        setIsSessionValid(pinProtectionService.isSessionValid())
-      }
+      // Attempt auto-unlock using centralized service
+      const unlocked = await autoUnlockService.attemptAutoUnlock()
+      setIsSessionValid(unlocked)
 
       // Load provider statuses
       const providerStatuses: ProviderStatus[] = [
@@ -167,7 +156,7 @@ export const LLMSettings: React.FC = () => {
 
   const loadAvailableModels = async () => {
     if (!isSessionValid) {
-      toast.error('Please unlock your session first')
+      toastService.error('Please unlock your session first')
       return
     }
 
@@ -189,7 +178,7 @@ export const LLMSettings: React.FC = () => {
 
           // Get saved preferences for this provider
           const savedPreferences = await window.electron.storage.get(['llm-model-preferences'])
-          const allPreferences = savedPreferences['llm-model-preferences'] ?? {}
+          const allPreferences = (savedPreferences['llm-model-preferences'] ?? {}) as Record<string, Record<string, boolean>>
           const providerPreferences = allPreferences[provider.provider] ?? {}
 
           // Add models with enabled status
@@ -203,7 +192,7 @@ export const LLMSettings: React.FC = () => {
 
         } catch (error) {
           log.error(`Failed to load models for ${provider.provider}`, { error })
-          toast.error(`Failed to load models for ${provider.name}`)
+          toastService.error(`Failed to load models for ${provider.name}`)
         }
       }
 
@@ -212,7 +201,7 @@ export const LLMSettings: React.FC = () => {
 
     } catch (error) {
       log.error('Failed to load available models', { error })
-      toast.error('Failed to load available models')
+      toastService.error('Failed to load available models')
     } finally {
       setLoadingModels(false)
     }
@@ -229,7 +218,7 @@ export const LLMSettings: React.FC = () => {
 
       // Save to storage
       const currentPreferences = await window.electron.storage.get(['llm-model-preferences'])
-      const allPreferences = currentPreferences['llm-model-preferences'] ?? {}
+      const allPreferences = (currentPreferences['llm-model-preferences'] ?? {}) as Record<string, Record<string, boolean>>
       const providerPreferences = allPreferences[provider] ?? {}
       providerPreferences[modelId] = enabled
 
@@ -247,12 +236,12 @@ export const LLMSettings: React.FC = () => {
           : m
       ))
 
-      const modelName = models.find(m => m.provider === provider && m.model.modelId === modelId)?.model.displayName || modelId
-      toast.success(`${modelName} ${enabled ? 'enabled' : 'disabled'}`)
+      const modelName = models.find(m => m.provider === provider && m.model.modelId === modelId)?.model.displayName ?? modelId
+      toastService.success(`${modelName} ${enabled ? 'enabled' : 'disabled'}`)
 
     } catch (error) {
       log.error('Failed to toggle model', { provider, modelId, enabled, error })
-      toast.error('Failed to update model preference')
+      toastService.error('Failed to update model preference')
 
       // Revert state on error
       setModels(prev => prev.map(m =>
@@ -269,11 +258,11 @@ export const LLMSettings: React.FC = () => {
       await pinProtectionService.verifyPin(values.pin)
       setIsSessionValid(true)
       form.resetFields()
-      toast.success('Session unlocked')
+      toastService.success('Session unlocked')
 
     } catch (error) {
       log.error('PIN verification failed', { error })
-      toast.error('Incorrect PIN')
+      toastService.error('Incorrect PIN')
     } finally {
       setLoading(false)
     }
@@ -290,13 +279,13 @@ export const LLMSettings: React.FC = () => {
       setShowApiKeyForm(false)
       setSelectedProvider(null)
       form.resetFields()
-      toast.success(`${PROVIDER_INFO[selectedProvider].name} API key saved`)
+      toastService.success(`${PROVIDER_INFO[selectedProvider].name} API key saved`)
 
       await loadStatus()
 
     } catch (error) {
       log.error('API key setup failed', { error })
-      toast.error('Failed to save API key. Please try again.')
+      toastService.error('Failed to save API key. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -304,26 +293,26 @@ export const LLMSettings: React.FC = () => {
 
   const handleRemoveApiKey = async (provider: LLMProvider) => {
     if (!isSessionValid) {
-      toast.error('Please unlock your session first')
+      toastService.error('Please unlock your session first')
       return
     }
 
     try {
       const defaultPin = getDefaultPin()
       await apiKeyManagerService.removeApiKey(provider, defaultPin)
-      toast.success(`${PROVIDER_INFO[provider].name} API key removed`)
+      toastService.success(`${PROVIDER_INFO[provider].name} API key removed`)
 
       await loadStatus()
 
     } catch (error) {
       log.error('API key removal failed', { error })
-      toast.error('Failed to remove API key.')
+      toastService.error('Failed to remove API key.')
     }
   }
 
   const handleTestProvider = async (provider: LLMProvider) => {
     if (!isSessionValid) {
-      toast.error('Please unlock your session first')
+      toastService.error('Please unlock your session first')
       return
     }
 
@@ -336,7 +325,7 @@ export const LLMSettings: React.FC = () => {
       const apiKey = await apiKeyManagerService.getApiKey(provider, defaultPin)
 
       if (!apiKey) {
-        toast.error('No API key found. Please configure your API key first.')
+        toastService.error('No API key found. Please configure your API key first.')
         setProviders(prev => prev.map(p =>
           p.provider === provider
             ? { ...p, lastTested: Date.now(), testResult: false }
@@ -365,14 +354,14 @@ export const LLMSettings: React.FC = () => {
 
       // Show appropriate toast message
       if (testResult.success) {
-        toast.success(`${PROVIDER_INFO[provider].name} connection successful${testResult.model ? ` (${testResult.model})` : ''}`)
+        toastService.success(`${PROVIDER_INFO[provider].name} connection successful${testResult.model ? ` (${testResult.model})` : ''}`)
         log.info('Provider connection test successful', {
           provider,
           model: testResult.model,
           message: testResult.message
         })
       } else {
-        toast.error(`${PROVIDER_INFO[provider].name}: ${testResult.message}`)
+        toastService.error(`${PROVIDER_INFO[provider].name}: ${testResult.message}`)
         log.warn('Provider connection test failed', {
           provider,
           message: testResult.message
@@ -390,16 +379,16 @@ export const LLMSettings: React.FC = () => {
       ))
 
       if (error instanceof Error && error.message.includes('API key')) {
-        toast.error('Invalid or missing API key. Please check your configuration.')
+        toastService.error('Invalid or missing API key. Please check your configuration.')
       } else {
-        toast.error('Connection test failed. Please try again.')
+        toastService.error('Connection test failed. Please try again.')
       }
     } finally {
       setTestingProvider(null)
     }
   }
 
-  const handleToggleProvider = async (provider: LLMProvider, enabled: boolean) => {
+  const handleToggleProvider = (provider: LLMProvider, enabled: boolean) => {
     try {
       setProviders(prev => prev.map(p =>
         p.provider === provider
@@ -407,21 +396,21 @@ export const LLMSettings: React.FC = () => {
           : p
       ))
 
-      toast.success(`${PROVIDER_INFO[provider].name} ${enabled ? 'enabled' : 'disabled'}`)
+      toastService.success(`${PROVIDER_INFO[provider].name} ${enabled ? 'enabled' : 'disabled'}`)
     } catch (error) {
       log.error('Failed to toggle provider', { provider, enabled, error })
-      toast.error('Failed to update provider status')
+      toastService.error('Failed to update provider status')
     }
   }
 
   const handleChangePin = async (values: { currentPin: string; newPin: string; confirmPin: string }) => {
     if (values.newPin !== values.confirmPin) {
-      toast.error('New PIN and confirmation do not match')
+      toastService.error('New PIN and confirmation do not match')
       return
     }
 
     if (values.newPin.length < 4) {
-      toast.error('PIN must be at least 4 characters long')
+      toastService.error('PIN must be at least 4 characters long')
       return
     }
 
@@ -432,13 +421,52 @@ export const LLMSettings: React.FC = () => {
       setShowChangePinForm(false)
       changePinForm.resetFields()
       setIsSessionValid(false) // Force re-authentication with new PIN
-      toast.success('PIN changed successfully. Please unlock with your new PIN.')
+      toastService.success('PIN changed successfully. Please unlock with your new PIN.')
     } catch (error) {
       log.error('PIN change failed', { error })
-      toast.error('Failed to change PIN. Please check your current PIN.')
+      toastService.error('Failed to change PIN. Please check your current PIN.')
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleResetClick = () => {
+    setShowResetConfirmation(true)
+  }
+
+  const handleResetConfirm = async () => {
+    setResetting(true)
+    try {
+      log.warn('User initiated emergency PIN reset from settings')
+
+      // Clear all API keys first
+      apiKeyManagerService.clearSessionCache()
+
+      // Execute emergency wipe
+      await pinProtectionService.emergencyWipe()
+
+      toastService.success('PIN and all secure data have been reset successfully')
+
+      setShowResetConfirmation(false)
+
+      // Reload status to reflect reset state
+      setTimeout(() => {
+        setIsSessionValid(false)
+        void loadStatus()
+        // Reload to ensure clean state
+        window.location.reload()
+      }, 500)
+
+    } catch (error) {
+      log.error('Failed to reset PIN', { error })
+      toastService.error('Failed to reset PIN. Please try again.')
+    } finally {
+      setResetting(false)
+    }
+  }
+
+  const handleResetCancel = () => {
+    setShowResetConfirmation(false)
   }
 
   // If session is locked, show unlock form
@@ -454,7 +482,7 @@ export const LLMSettings: React.FC = () => {
         />
 
         <Card title="Unlock Session" className="max-w-md">
-          <Form form={form} onFinish={handleUnlock} layout="vertical">
+          <Form form={form} onFinish={(values: { pin: string }) => { void handleUnlock(values) }} layout="vertical">
             <Form.Item
               name="pin"
               label="Enter PIN"
@@ -475,84 +503,40 @@ export const LLMSettings: React.FC = () => {
     )
   }
 
-  // Calculate overall stats
-  const totalUsage = providers.reduce((acc, p) => ({
-    requests: acc.requests + (p.usage?.requests ?? 0),
-    tokens: acc.tokens + (p.usage?.tokens ?? 0),
-    cost: acc.cost + (p.usage?.cost ?? 0)
-  }), { requests: 0, tokens: 0, cost: 0 })
-
-  const activeProviders = providers.filter(p => p.hasApiKey && p.isEnabled).length
-
   // Main LLM settings interface
   return (
-    <div className="space-y-6">
-      {/* Usage Overview */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card size="small">
-          <Statistic
-            title="Active Providers"
-            value={activeProviders}
-            valueStyle={{ color: '#1890ff', fontSize: '24px' }}
-            prefix={<ActivityIcon className="h-5 w-5" />}
-          />
-        </Card>
-        <Card size="small">
-          <Statistic
-            title="Total Requests"
-            value={totalUsage.requests}
-            valueStyle={{ color: '#52c41a', fontSize: '24px' }}
-          />
-        </Card>
-        <Card size="small">
-          <Statistic
-            title="Total Tokens"
-            value={totalUsage.tokens}
-            valueStyle={{ color: '#722ed1', fontSize: '24px' }}
-          />
-        </Card>
-        <Card size="small">
-          <Statistic
-            title="Total Cost"
-            value={totalUsage.cost}
-            precision={2}
-            prefix="$"
-            valueStyle={{ color: '#fa8c16', fontSize: '24px' }}
-          />
-        </Card>
-      </div>
-
+    <div className="space-y-4">
       {/* PIN Management Section */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <div className="flex items-center justify-between mb-2">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <ShieldIcon className="h-5 w-5 text-blue-600" />
-            <h4 className="text-sm font-medium text-gray-900">Security Settings</h4>
+            <ShieldIcon className="h-4 w-4 text-blue-600" />
+            <span className="text-sm font-medium">
+              PIN: <strong>{hasCustomPin ? 'Custom' : 'Default'}</strong>
+            </span>
           </div>
-          <Button
-            size="small"
-            icon={<SettingsIcon className="h-3 w-3" />}
-            onClick={() => setShowChangePinForm(true)}
-          >
-            Change PIN
-          </Button>
+          <Space size="small">
+            <Button
+              size="small"
+              icon={<SettingsIcon className="h-3 w-3" />}
+              onClick={() => setShowChangePinForm(true)}
+            >
+              Change
+            </Button>
+            <Button
+              size="small"
+              danger
+              icon={<TrashIcon className="h-3 w-3" />}
+              onClick={handleResetClick}
+            >
+              Reset
+            </Button>
+          </Space>
         </div>
-        <p className="text-sm text-gray-600">
-          PIN Status: <strong>{hasCustomPin ? 'Custom PIN configured' : 'Using default PIN'}</strong>
-          <br />
-          <span className="text-xs text-gray-500">
-            {hasCustomPin ? 'Your API keys are protected by your custom PIN' : 'Recommendation: Set a custom PIN for better security'}
-          </span>
-        </p>
-      </div>
-
-      <div>
-        <h4 className="text-sm font-medium text-gray-900">AI Provider Configuration</h4>
-        <p className="text-sm text-gray-500">Configure API keys, test connections, and manage your AI providers</p>
       </div>
 
       {/* Provider Configuration Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         {providers.map((provider) => (
           <Card
             key={provider.provider}
@@ -565,9 +549,10 @@ export const LLMSettings: React.FC = () => {
                 : 'border-gray-200'
             )}
             size="small"
+            bodyStyle={{ padding: '12px' }}
           >
             {/* Header with Status */}
-            <div className="flex items-start justify-between mb-3">
+            <div className="flex items-start justify-between mb-2">
               <div className="flex items-center gap-2">
                 <BrainIcon className={clsx(
                   'h-5 w-5',
@@ -597,7 +582,7 @@ export const LLMSettings: React.FC = () => {
             {/* Usage Stats */}
             {provider.hasApiKey && provider.usage && (
               provider.usage.requests > 0 || provider.usage.tokens > 0 || provider.usage.cost > 0 ? (
-                <div className="grid grid-cols-3 gap-2 mb-3 p-2 bg-white rounded border">
+                <div className="grid grid-cols-3 gap-2 mb-2 p-2 bg-white rounded border">
                   <Statistic
                     title="Requests"
                     value={provider.usage.requests}
@@ -617,7 +602,7 @@ export const LLMSettings: React.FC = () => {
                   />
                 </div>
               ) : (
-                <div className="mb-3 p-2 bg-gray-50 rounded border text-center text-xs text-gray-500">
+                <div className="mb-2 p-1.5 bg-gray-50 rounded border text-center text-xs text-gray-500">
                   No usage yet
                 </div>
               )
@@ -625,9 +610,9 @@ export const LLMSettings: React.FC = () => {
 
             {/* Test Status */}
             {provider.hasApiKey && provider.lastTested && (
-              <div className="mb-3 p-2 bg-gray-50 rounded border text-xs">
+              <div className="mb-2 p-2 bg-gray-50 rounded border text-xs">
                 <div className={clsx(
-                  'flex items-center gap-2 mb-1',
+                  'flex items-center gap-2',
                   provider.testResult ? 'text-green-600' : 'text-red-600'
                 )}>
                   <div className={clsx(
@@ -635,14 +620,11 @@ export const LLMSettings: React.FC = () => {
                     provider.testResult ? 'bg-green-500' : 'bg-red-500'
                   )} />
                   <span className="font-medium">
-                    Last test: {provider.testResult ? 'Success' : 'Failed'}
+                    {provider.testResult ? 'Success' : 'Failed'}
+                    {provider.testResult && provider.testedModel && (
+                      <span className="ml-2 text-gray-500">• {provider.testedModel}</span>
+                    )}
                   </span>
-                </div>
-                <div className="text-gray-500 ml-4">
-                  {new Date(provider.lastTested).toLocaleTimeString()}
-                  {provider.testResult && provider.testedModel && (
-                    <span className="ml-2">• {provider.testedModel}</span>
-                  )}
                 </div>
               </div>
             )}
@@ -668,7 +650,7 @@ export const LLMSettings: React.FC = () => {
                     <Button
                       size="small"
                       icon={<TestTubeIcon className="h-3 w-3" />}
-                      onClick={() => handleTestProvider(provider.provider)}
+                      onClick={() => { void handleTestProvider(provider.provider) }}
                       loading={testingProvider === provider.provider}
                     />
                   </Tooltip>
@@ -681,7 +663,7 @@ export const LLMSettings: React.FC = () => {
                     size="small"
                     type="text"
                     danger
-                    onClick={() => handleRemoveApiKey(provider.provider)}
+                    onClick={() => { void handleRemoveApiKey(provider.provider) }}
                   >
                     Remove
                   </Button>
@@ -719,7 +701,7 @@ export const LLMSettings: React.FC = () => {
             </Button>
           }
         >
-          <Form form={form} onFinish={handleApiKeySetup} layout="vertical">
+          <Form form={form} onFinish={(values: { apiKey: string }) => { void handleApiKeySetup(values) }} layout="vertical">
             <Form.Item
               name="apiKey"
               label="API Key"
@@ -770,7 +752,7 @@ export const LLMSettings: React.FC = () => {
         >
           <Form
             form={changePinForm}
-            onFinish={handleChangePin}
+            onFinish={(values: { currentPin: string; newPin: string; confirmPin: string }) => { void handleChangePin(values) }}
             layout="vertical"
           >
             <Alert
@@ -834,18 +816,15 @@ export const LLMSettings: React.FC = () => {
 
       {/* Model Management Section */}
       <div>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2">
-              <ListIcon className="h-4 w-4" />
-              Model Management
-            </h4>
-            <p className="text-sm text-gray-500">Enable/disable specific models for use in chat</p>
-          </div>
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-sm font-medium text-gray-900 flex items-center gap-2">
+            <ListIcon className="h-4 w-4" />
+            Model Management
+          </h4>
           <Space>
             <Button
               size="small"
-              onClick={loadAvailableModels}
+              onClick={() => { void loadAvailableModels() }}
               loading={loadingModels}
               disabled={providers.filter(p => p.hasApiKey).length === 0}
             >
@@ -932,7 +911,7 @@ export const LLMSettings: React.FC = () => {
                       size="small"
                       checked={record.isEnabled}
                       loading={record.isLoading}
-                      onChange={(checked) => handleToggleModel(record.provider, record.model.modelId, checked)}
+                      onChange={(checked) => { void handleToggleModel(record.provider, record.model.modelId, checked) }}
                     />
                   )
                 }
@@ -953,16 +932,89 @@ export const LLMSettings: React.FC = () => {
         )}
       </div>
 
-      <Divider />
-
-      <div className="text-xs text-gray-500">
-        <p className="mb-1">
-          <strong>Security:</strong> All API keys are encrypted with AES-256 and protected by your PIN.
-        </p>
-        <p>
-          <strong>Privacy:</strong> Your API keys never leave your browser and are only decrypted when needed.
-        </p>
+      <div className="text-xs text-gray-500 pt-2 border-t">
+        <strong>Security:</strong> API keys encrypted with AES-256, protected by PIN, never leave your device
       </div>
+
+      {/* Reset Confirmation Modal */}
+      <Modal
+        title={
+          <Space className="items-center">
+            <AlertTriangleIcon className="h-5 w-5 text-red-600" />
+            <span>Reset PIN and Delete All Data</span>
+          </Space>
+        }
+        open={showResetConfirmation}
+        onCancel={handleResetCancel}
+        closable={!resetting}
+        maskClosable={!resetting}
+        centered
+        width={500}
+        footer={
+          <div className="flex justify-end space-x-2">
+            <Button onClick={handleResetCancel} disabled={resetting}>
+              Cancel
+            </Button>
+            <Button
+              type="primary"
+              danger
+              icon={<TrashIcon className="h-4 w-4" />}
+              loading={resetting}
+              onClick={() => { void handleResetConfirm() }}
+            >
+              {resetting ? 'Resetting...' : 'Reset PIN and Delete All Data'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          {/* Warning Alert */}
+          <Alert
+            message="This action cannot be undone"
+            description="Resetting your PIN will permanently delete all secure data."
+            type="error"
+            icon={<AlertTriangleIcon className="h-4 w-4" />}
+            showIcon
+          />
+
+          {/* What will be deleted */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
+              <ShieldIcon className="h-4 w-4" />
+              <span>The following data will be deleted:</span>
+            </div>
+            <ul className="list-disc list-inside space-y-1 text-sm text-gray-600 ml-6">
+              <li>Current PIN and PIN hash</li>
+              <li>All stored API keys (Claude, OpenAI, Gemini)</li>
+              <li>Security settings and configurations</li>
+              <li>Active session and authentication</li>
+              <li>Failed attempt records and lockout data</li>
+            </ul>
+          </div>
+
+          {/* What happens next */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
+              <InfoIcon className="h-4 w-4" />
+              <span>After reset:</span>
+            </div>
+            <ul className="list-disc list-inside space-y-1 text-sm text-gray-600 ml-6">
+              <li>PIN will reset to default (today&apos;s date in MMDDYY format)</li>
+              <li>You will need to re-enter all API keys</li>
+              <li>Security settings will return to defaults</li>
+              <li>The application will reload to ensure clean state</li>
+            </ul>
+          </div>
+
+          {/* Final warning */}
+          <Alert
+            message="Are you sure you want to proceed?"
+            description="This will permanently delete all your secure data and cannot be recovered."
+            type="warning"
+            showIcon
+          />
+        </div>
+      </Modal>
     </div>
   )
 }

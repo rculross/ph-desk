@@ -3,6 +3,7 @@ import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { useAuthStore } from '../../stores/auth.store'
+import { useTenantStore } from '../../stores/tenant.store'
 import type { TenantContext, AuthError } from '../../types'
 import { logger } from '../../utils/logger'
 import { authService, type AuthSession } from '../auth'
@@ -21,17 +22,18 @@ const log = logger.api
 // Query hooks
 export function useAuthSession() {
   const { isAuthenticated } = useAuthStore()
+  const currentTenant = useTenantStore(state => state.currentTenant)
 
   return useQuery({
     queryKey: queryKeys.session(),
     queryFn: async () => {
       const startTime = performance.now()
       log.debug('Fetching authentication session')
-      
+
       try {
         const result = await authService.getCurrentSession()
         const endTime = performance.now()
-        
+
         log.debug('Authentication session fetched successfully', {
           duration: Math.round(endTime - startTime),
           isAuthenticated: result.isAuthenticated,
@@ -39,7 +41,7 @@ export function useAuthSession() {
           tenantId: result.tenantContext?.id,
           lastActivity: result.lastActivity ? new Date(result.lastActivity).toISOString() : undefined
         })
-        
+
         return result
       } catch (error) {
         const endTime = performance.now()
@@ -50,15 +52,17 @@ export function useAuthSession() {
         throw error
       }
     },
-    enabled: isAuthenticated,
+    // CRITICAL FIX: Only fetch session when BOTH authenticated AND tenant selected
+    // /myprofile and /tenant endpoints require a tenant slug parameter
+    enabled: isAuthenticated && currentTenant !== null,
     ...queryDefaults.realtime,
     ...getEntityCacheConfig('session'), // Use unified config for session cache timing
     select: (data: AuthSession) => {
       const isValid = data.isAuthenticated && !isSessionExpired(data)
-      log.debug('Session validation result', { 
+      log.debug('Session validation result', {
         isAuthenticated: data.isAuthenticated,
         isValid,
-        userId: data.user?.id 
+        userId: data.user?.id
       })
       return {
         ...data,
@@ -70,17 +74,18 @@ export function useAuthSession() {
 
 export function useCurrentUser() {
   const { isAuthenticated } = useAuthStore()
+  const currentTenant = useTenantStore(state => state.currentTenant)
 
   return useQuery({
     queryKey: [...queryKeys.auth, 'user'],
     queryFn: async () => {
       const startTime = performance.now()
       log.debug('Fetching current user profile from session')
-      
+
       try {
         const session = await authService.getCurrentSession()
         const endTime = performance.now()
-        
+
         log.debug('Current user profile obtained from session', {
           duration: Math.round(endTime - startTime),
           userId: session.user?.id,
@@ -88,7 +93,7 @@ export function useCurrentUser() {
           role: session.user?.role,
           permissionCount: session.user?.permissions.length ?? 0
         })
-        
+
         return session.user
       } catch (error) {
         const endTime = performance.now()
@@ -99,7 +104,9 @@ export function useCurrentUser() {
         throw error
       }
     },
-    enabled: isAuthenticated,
+    // CRITICAL FIX: Only fetch user when BOTH authenticated AND tenant selected
+    // getCurrentSession() calls /myprofile and /tenant which require a tenant slug
+    enabled: isAuthenticated && currentTenant !== null,
     ...queryDefaults.standard,
     ...getEntityCacheConfig('currentUser') // Use unified config for current user cache timing
   })
@@ -107,11 +114,14 @@ export function useCurrentUser() {
 
 export function useSessionValidity() {
   const { isAuthenticated } = useAuthStore()
+  const currentTenant = useTenantStore(state => state.currentTenant)
 
   return useQuery({
     queryKey: [...queryKeys.auth, 'validity'],
     queryFn: () => authService.isAuthenticated(),
-    enabled: isAuthenticated,
+    // CRITICAL FIX: Only fetch validity when BOTH authenticated AND tenant selected
+    // isAuthenticated() may call APIs that require a tenant slug
+    enabled: isAuthenticated && currentTenant !== null,
     ...queryDefaults.realtime,
     ...getEntityCacheConfig('sessionValidity'), // Use unified config for session validity cache timing
     refetchIntervalInBackground: false

@@ -7,10 +7,9 @@
 
 import { useState } from 'react'
 
-import { tenantService } from '@/api/services/tenant.service'
 import { APP_VERSION } from '@/config/version'
 import type { AuthEnvironment } from '@/services/auth.service'
-import { useTenantStore } from '@/stores/tenant.store'
+import { reinitializeTenantStore } from '@/stores/tenant.store'
 
 import { authService } from '../../services/auth.service'
 import { logger } from '../../utils/logger'
@@ -26,8 +25,7 @@ export function LoginPrompt({ onLoginSuccess }: LoginPromptProps) {
   const [error, setError] = useState<string | null>(null)
   const [environment, setEnvironment] = useState<AuthEnvironment>('production')
 
-  // Get tenant store actions
-  const { switchTenant, fetchAvailableTenants } = useTenantStore()
+  // Note: Tenant store actions not needed here - reinitializeTenantStore handles everything
 
   const handleLogin = async () => {
     setIsLoading(true)
@@ -43,49 +41,17 @@ export function LoginPrompt({ onLoginSuccess }: LoginPromptProps) {
         environment: authResult.environment
       })
 
-      // If we have a tenant slug from login, switch to that tenant
-      if (authResult.tenantSlug) {
-        log.info('[LoginPrompt] Switching to tenant from login', {
-          tenantSlug: authResult.tenantSlug
+      // CRITICAL FIX: Reinitialize tenant store after successful login
+      // This fetches tenants with the new authenticated session
+      try {
+        log.info('[LoginPrompt] Reinitializing tenant store after login...')
+        await reinitializeTenantStore()
+        log.info('[LoginPrompt] Tenant store reinitialized successfully')
+      } catch (reinitError) {
+        log.error('[LoginPrompt] Failed to reinitialize tenant store after login', {
+          error: reinitError instanceof Error ? reinitError.message : 'Unknown error'
         })
-
-        try {
-          // Save the tenant slug to storage first so tenant discovery can use it
-          await window.electron.storage.set({
-            tenantSlug: authResult.tenantSlug
-          })
-          log.info('[LoginPrompt] Saved tenant slug to storage', {
-            tenantSlug: authResult.tenantSlug
-          })
-
-          // Fetch available tenants (will use saved tenant slug for discovery)
-          await fetchAvailableTenants(undefined, true)
-
-          // Switch to the tenant from login
-          await switchTenant(authResult.tenantSlug)
-
-          log.info('[LoginPrompt] Successfully switched to tenant, validating connection...', {
-            tenantSlug: authResult.tenantSlug
-          })
-
-          // Explicitly validate the connection by calling /myprofile
-          const hasAccess = await tenantService.hasAccessToTenant(authResult.tenantSlug)
-          if (hasAccess) {
-            log.info('[LoginPrompt] Connection validated successfully', {
-              tenantSlug: authResult.tenantSlug
-            })
-          } else {
-            log.warn('[LoginPrompt] Connection validation failed', {
-              tenantSlug: authResult.tenantSlug
-            })
-          }
-        } catch (switchError) {
-          log.error('[LoginPrompt] Failed to switch tenant after login', {
-            error: switchError instanceof Error ? switchError.message : 'Unknown error',
-            tenantSlug: authResult.tenantSlug
-          })
-          // Don't fail the login, just log the error - user can manually select tenant
-        }
+        // Don't fail the login - user can manually select tenant from dropdown
       }
 
       // Notify parent component

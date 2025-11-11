@@ -31,8 +31,8 @@ import {
   WifiIcon,
   WifiOffIcon
 } from 'lucide-react'
-import { toast } from 'react-hot-toast'
 
+import { toastService } from '@/services/toast.service'
 import { getTenantSlug } from '../../api/client/http-client'
 import { SalesforceErrorBoundary } from '../../components/integrations/SalesforceErrorBoundary'
 import { useSalesforceIntegration, useSalesforceConnectivity } from '../../hooks/useSalesforceIntegration'
@@ -128,11 +128,11 @@ export function SalesforceIntegration({ className }: SalesforceIntegrationProps)
 
     try {
       await refetch()
-      toast.success('Integration data refreshed')
+      toastService.success('Integration data refreshed')
     } catch (refreshError) {
       const errorMessage = refreshError instanceof Error ? refreshError.message : 'Refresh failed'
       log.error('Manual refresh failed', logSanitizer.forError({ error: errorMessage, tenantSlug }))
-      toast.error(`Refresh failed: ${errorMessage}`)
+      toastService.error(`Refresh failed: ${errorMessage}`)
     }
   }, [refetch, log, tenantSlug])
 
@@ -144,14 +144,14 @@ export function SalesforceIntegration({ className }: SalesforceIntegrationProps)
       const result = await connectivityMutation.mutateAsync()
 
       if (result.success) {
-        toast.success(`Connection successful (${result.responseTime}ms)`)
+        toastService.success(`Connection successful (${result.responseTime}ms)`)
       } else {
-        toast.error(`Connection failed: ${result.error ?? 'Unknown error'}`)
+        toastService.error(`Connection failed: ${result.error ?? 'Unknown error'}`)
       }
     } catch (connectError) {
       const errorMessage = connectError instanceof Error ? connectError.message : 'Connectivity test failed'
       log.error('Connectivity test failed', logSanitizer.forError({ error: errorMessage, tenantSlug }))
-      toast.error(`Connectivity test failed: ${errorMessage}`)
+      toastService.error(`Connectivity test failed: ${errorMessage}`)
     }
   }, [connectivityMutation, log, tenantSlug])
 
@@ -161,11 +161,11 @@ export function SalesforceIntegration({ className }: SalesforceIntegrationProps)
 
     try {
       await invalidate()
-      toast.success('Cache invalidated - data will refresh')
+      toastService.success('Cache invalidated - data will refresh')
     } catch (invalidateError) {
       const errorMessage = invalidateError instanceof Error ? invalidateError.message : 'Cache invalidation failed'
       log.error('Cache invalidation failed', logSanitizer.forError({ error: errorMessage, tenantSlug }))
-      toast.error(`Cache invalidation failed: ${errorMessage}`)
+      toastService.error(`Cache invalidation failed: ${errorMessage}`)
     }
   }, [invalidate, log, tenantSlug])
 

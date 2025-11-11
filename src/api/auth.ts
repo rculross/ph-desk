@@ -72,15 +72,14 @@ export interface AuthError {
 export class AuthService {
   /**
    * Check if user is logged in
-   * For desktop app: checks Electron stored cookies
-   * For web/extension: tests API access
+   * ALWAYS verifies with /myprofile API call to ensure cookies are valid
    */
   async isAuthenticated(): Promise<boolean> {
     const startTime = performance.now()
     log.debug('Starting authentication check')
 
     try {
-      // Desktop app: Check Electron stored auth to avoid unnecessary API calls
+      // Desktop app: First check if we have stored cookies
       if (window.electron.auth) {
         const storedAuth = await window.electron.auth.getStoredAuth()
         const hasStoredAuth = storedAuth?.cookies && storedAuth.cookies.length > 0
@@ -93,19 +92,15 @@ export class AuthService {
           return false
         }
 
-        const endTimeElectron = performance.now()
-        log.debug('Found stored authentication in Electron', {
-          duration: Math.round(endTimeElectron - startTime)
-        })
-        return true
+        log.debug('Found stored cookies, verifying with /myprofile API call...')
       }
 
-      // Fallback for non-desktop environments: check via API
+      // ALWAYS verify authentication with actual API call
       const client = getHttpClient()
       await client.get('/myprofile')
 
       const endTime = performance.now()
-      log.info('Authentication check successful', {
+      log.info('Authentication verified via /myprofile API', {
         duration: Math.round(endTime - startTime)
       })
 
@@ -194,15 +189,27 @@ export class AuthService {
 
   /**
    * Get tenant info from API
+   * NOTE: Uses /myprofile endpoint since /tenant doesn't exist in Planhat API
    */
   async getTenantContext(): Promise<TenantContext | null> {
     const startTime = performance.now()
     log.debug('Fetching tenant context')
-    
+
     try {
       const client = getHttpClient()
-      const tenantData = await client.get<TenantContext>('/tenant')
+      const profileData = await client.get<any>('/myprofile')
       const endTime = performance.now()
+
+      // Extract tenant context from user profile
+      const tenantData: TenantContext = {
+        id: profileData.tenant?._id || '',
+        slug: profileData.tenant?.slug || '',
+        name: profileData.tenant?.name || '',
+        domain: profileData.tenant?.domain || '',
+        isActive: true,
+        createdAt: profileData.tenant?.createdAt || new Date().toISOString(),
+        updatedAt: profileData.tenant?.updatedAt || new Date().toISOString()
+      }
 
       log.info('Tenant context fetched successfully', {
         duration: Math.round(endTime - startTime),

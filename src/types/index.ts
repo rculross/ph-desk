@@ -65,25 +65,8 @@ export interface TenantState {
 export interface AppState {
   theme: 'light' | 'dark' | 'system'
   sidebarCollapsed: boolean
-  notifications: Notification[]
   settings: UserSettings
   lastActivity: number
-}
-
-export interface Notification {
-  id: string
-  type: 'info' | 'success' | 'warning' | 'error'
-  title: string
-  message: string
-  timestamp: number
-  read: boolean
-  actions?: NotificationAction[]
-}
-
-export interface NotificationAction {
-  label: string
-  action: () => void
-  style?: 'primary' | 'secondary' | 'danger'
 }
 
 export interface UserSettings {

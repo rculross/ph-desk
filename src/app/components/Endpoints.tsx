@@ -19,8 +19,8 @@ const { TextArea } = Input
 import { clsx } from 'clsx'
 import { format as formatDate } from 'date-fns'
 import { NetworkIcon } from 'lucide-react'
-import { toast } from 'react-hot-toast'
 
+import { toastService } from '@/services/toast.service'
 import { getTenantSlug } from '../../api/client/http-client'
 import { useSharedExporter } from '../../components/exporters'
 import { Table } from '../../components/ui/Table'
@@ -123,17 +123,17 @@ export function Endpoints({ className }: EndpointsProps) {
   // Handle bulk import
   const handleImport = useCallback(async () => {
     if (!importData.trim()) {
-      toast.error('Please enter JSON data to import')
+      toastService.error('Please enter JSON data to import')
       return
     }
 
     try {
       await importEndpoints(importData)
-      toast.success('Endpoints imported successfully')
+      toastService.success('Endpoints imported successfully')
       setIsImportModalVisible(false)
       setImportData('')
     } catch (error) {
-      toast.error(`Failed to import endpoints: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toastService.error(`Failed to import endpoints: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }, [importData, importEndpoints])
 
@@ -155,10 +155,10 @@ export function Endpoints({ className }: EndpointsProps) {
       await scanTabs()
       // Then scan entire browser history
       await scanHistory(365) // Scan full year of history
-      toast.success('Discovery completed! Check the table for new endpoints.')
+      toastService.success('Discovery completed! Check the table for new endpoints.')
     } catch (error) {
       log.error('Discovery failed', { error })
-      toast.error('Discovery failed. Please try again.')
+      toastService.error('Discovery failed. Please try again.')
     }
   }, [scanTabs, scanHistory, log])
 

@@ -1,11 +1,9 @@
 const { Menu, app, shell, dialog, BrowserWindow } = require('electron');
 const path = require('path');
 
-// Get preferences instance from main.cjs
-let getPreferencesFromMain = null;
-
-// Store reference to main window
+// Store reference to main window and Planhat browser
 let mainWindow = null;
+let planhatBrowserWindow = null;
 
 /**
  * Set the main window reference
@@ -16,32 +14,27 @@ function setMainWindow(window) {
 }
 
 /**
- * Set function to get preferences from main process
- * @param {Function} getPreferencesFn - Function that returns preferences instance
+ * Set the Planhat browser window reference
+ * @param {BrowserWindow} window - The Planhat browser window
  */
-function setPreferencesGetter(getPreferencesFn) {
-  getPreferencesFromMain = getPreferencesFn;
+function setPlanhatBrowserWindow(window) {
+  planhatBrowserWindow = window;
+  // Update menu to reflect new window state
+  updateWindowMenu();
 }
 
 /**
- * Open preferences window using electron-preferences
+ * Open preferences by sending IPC message to renderer
  */
 function openPreferencesWindow() {
-  if (!getPreferencesFromMain) {
-    console.error('[Menu] Preferences getter not set');
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    console.error('[Menu] Main window not available');
     return;
   }
 
-  const preferences = getPreferencesFromMain();
-
-  if (!preferences) {
-    console.error('[Menu] Preferences not initialized');
-    return;
-  }
-
-  // Show preferences window (electron-preferences handles window creation)
-  preferences.show();
-  console.log('[Menu] Opened preferences window');
+  // Send IPC message to renderer to open settings modal
+  mainWindow.webContents.send('menu:open-preferences');
+  console.log('[Menu] Sent IPC message to open settings modal');
 }
 
 /**
@@ -93,6 +86,14 @@ function createMenu() {
           click: openPreferencesWindow
         },
         { type: 'separator' },
+        {
+          label: 'Restart',
+          click: () => {
+            // Relaunch the app and then quit the current instance
+            app.relaunch();
+            app.quit();
+          }
+        },
         isMac ? { role: 'close' } : { role: 'quit' }
       ]
     },
@@ -145,7 +146,32 @@ function createMenu() {
         { type: 'separator' },
         { role: 'front' },
         { type: 'separator' },
-        { role: 'window' }
+        // Explicit window list (dynamically updated)
+        {
+          id: 'main-window',
+          label: 'PH Tools Desktop',
+          type: 'checkbox',
+          checked: true,
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.show();
+              mainWindow.focus();
+            }
+          }
+        },
+        {
+          id: 'planhat-browser',
+          label: 'Planhat Browser',
+          type: 'checkbox',
+          checked: false,
+          visible: false, // Initially hidden until browser is opened
+          click: () => {
+            if (planhatBrowserWindow && !planhatBrowserWindow.isDestroyed()) {
+              planhatBrowserWindow.show();
+              planhatBrowserWindow.focus();
+            }
+          }
+        }
       ]
     }] : []),
 
@@ -244,11 +270,51 @@ function updateMenuState(state = {}) {
   }
 }
 
+/**
+ * Update Window menu to reflect current window states
+ * Shows/hides Planhat browser menu item and updates checked states
+ */
+function updateWindowMenu() {
+  const menu = Menu.getApplicationMenu();
+  if (!menu) {
+    console.log('[Menu] No application menu found');
+    return;
+  }
+
+  // Find Window menu (only on macOS)
+  const windowMenu = menu.items.find(item => item.label === 'Window');
+  if (!windowMenu || !windowMenu.submenu) {
+    console.log('[Menu] Window menu not found');
+    return;
+  }
+
+  // Find the window menu items
+  const mainWindowItem = windowMenu.submenu.items.find(item => item.id === 'main-window');
+  const planhatBrowserItem = windowMenu.submenu.items.find(item => item.id === 'planhat-browser');
+
+  if (!mainWindowItem || !planhatBrowserItem) {
+    console.log('[Menu] Window menu items not found');
+    return;
+  }
+
+  // Update Planhat browser menu item visibility
+  const browserIsOpen = planhatBrowserWindow && !planhatBrowserWindow.isDestroyed();
+  planhatBrowserItem.visible = browserIsOpen;
+
+  // Update checked states based on focus
+  const focusedWindow = BrowserWindow.getFocusedWindow();
+  mainWindowItem.checked = focusedWindow === mainWindow;
+  planhatBrowserItem.checked = focusedWindow === planhatBrowserWindow;
+
+  console.log(`[Menu] Window menu updated - Browser visible: ${browserIsOpen}`);
+}
+
 module.exports = {
   initializeMenu,
   updateMenuState,
+  updateWindowMenu,
   setMainWindow,
-  setPreferencesGetter,
+  setPlanhatBrowserWindow,
   openPreferencesWindow,
   showAboutDialog
 };

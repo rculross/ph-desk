@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react'
 
-import { Modal, Form, Input, Button, Progress, Alert, Space } from 'antd'
+import { Modal, Form, Input, Button, Progress, Alert, Space, Divider } from 'antd'
 import { clsx } from 'clsx'
-import { LockIcon, AlertTriangleIcon, ShieldIcon } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { LockIcon, AlertTriangleIcon, ShieldIcon, TrashIcon, InfoIcon, CheckCircleIcon } from 'lucide-react'
 
+import { toastService } from '@/services/toast.service'
+
+import { apiKeyManagerService } from '../../services/api-key-manager.service'
+import { getDefaultPinExplanation } from '../../services/default-pin.service'
 import { pinProtectionService } from '../../services/pin-protection.service'
 import { PinProtectionError } from '../../types/llm-errors'
 import { logger } from '../../utils/logger'
@@ -31,20 +34,20 @@ export const PinEntryModal: React.FC<PinEntryModalProps> = ({
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
-  const [lockoutStatus, setLockoutStatus] = useState({
-    isLockedOut: false,
-    remainingTime: 0,
-    attemptsRemaining: 5
+  const [attemptStatus, setAttemptStatus] = useState({
+    attempts: 0,
+    attemptsRemaining: 3
   })
-  const [countdown, setCountdown] = useState(0)
+  const [showResetConfirmation, setShowResetConfirmation] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [resetPinDisplay, setResetPinDisplay] = useState<string | null>(null)
 
-  const pinInputRef = useRef<any>(null)
-  const countdownIntervalRef = useRef<NodeJS.Timeout>()
+  const pinInputRef = useRef<{ focus: () => void } | null>(null)
 
-  // Load lockout status when modal opens
+  // Load attempt status when modal opens
   useEffect(() => {
     if (open) {
-      loadLockoutStatus()
+      void loadAttemptStatus()
       setError('')
       form.resetFields()
     }
@@ -61,49 +64,17 @@ export const PinEntryModal: React.FC<PinEntryModalProps> = ({
     return undefined
   }, [open, autoFocus])
 
-  // Handle lockout countdown
-  useEffect(() => {
-    if (lockoutStatus.isLockedOut && lockoutStatus.remainingTime > 0) {
-      setCountdown(Math.ceil(lockoutStatus.remainingTime / 1000))
-
-      countdownIntervalRef.current = setInterval(() => {
-        setCountdown(prev => {
-          if (prev <= 1) {
-            clearInterval(countdownIntervalRef.current)
-            loadLockoutStatus() // Refresh status when countdown ends
-            return 0
-          }
-          return prev - 1
-        })
-      }, 1000)
-    } else {
-      clearInterval(countdownIntervalRef.current)
-      setCountdown(0)
-    }
-
-    return () => {
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current)
-      }
-    }
-  }, [lockoutStatus.isLockedOut, lockoutStatus.remainingTime])
-
-  const loadLockoutStatus = async (): Promise<void> => {
+  const loadAttemptStatus = async (): Promise<void> => {
     try {
-      const status = await pinProtectionService.getLockoutStatus()
-      setLockoutStatus(status)
-      log.debug('Lockout status loaded', status)
+      const status = await pinProtectionService.getAttemptStatus()
+      setAttemptStatus(status)
+      log.debug('Attempt status loaded', status)
     } catch (error) {
-      log.error('Failed to load lockout status', { error })
+      log.error('Failed to load attempt status', { error })
     }
   }
 
   const handleSubmit = async (values: { pin: string }) => {
-    if (lockoutStatus.isLockedOut) {
-      setError('Account is locked. Please wait for the countdown to complete.')
-      return
-    }
-
     setLoading(true)
     setError('')
 
@@ -113,7 +84,7 @@ export const PinEntryModal: React.FC<PinEntryModalProps> = ({
       await pinProtectionService.verifyPin(values.pin)
 
       log.info('PIN verification successful')
-      toast.success('PIN verified successfully')
+      toastService.success('PIN verified successfully')
 
       form.resetFields()
       onSuccess()
@@ -126,17 +97,14 @@ export const PinEntryModal: React.FC<PinEntryModalProps> = ({
 
         // Show specific error messages based on error code
         switch (error.code) {
-          case 'LOCKOUT_ACTIVE':
-            toast.error('Account locked due to too many failed attempts')
-            break
           case 'MAX_ATTEMPTS_EXCEEDED':
-            toast.error('Maximum attempts exceeded. All data has been wiped for security.')
+            toastService.error('Maximum attempts exceeded. All data has been wiped for security.')
             break
           case 'INVALID_PIN':
-            toast.error('Incorrect PIN')
+            toastService.error('Incorrect PIN')
             break
           default:
-            toast.error(error.message)
+            toastService.error(error.message)
         }
 
         // If this is a critical error, close the modal
@@ -147,11 +115,11 @@ export const PinEntryModal: React.FC<PinEntryModalProps> = ({
         }
       } else {
         setError('PIN verification failed. Please try again.')
-        toast.error('PIN verification failed')
+        toastService.error('PIN verification failed')
       }
 
-      // Refresh lockout status after failed attempt
-      await loadLockoutStatus()
+      // Refresh attempt status after failed attempt
+      await loadAttemptStatus()
 
     } finally {
       setLoading(false)
@@ -164,18 +132,44 @@ export const PinEntryModal: React.FC<PinEntryModalProps> = ({
     onCancel()
   }
 
-  const formatTime = (seconds: number): string => {
-    const minutes = Math.floor(seconds / 60)
-    const remainingSeconds = seconds % 60
-    if (minutes > 0) {
-      return `${minutes}m ${remainingSeconds}s`
+  const handleResetClick = () => {
+    setShowResetConfirmation(true)
+  }
+
+  const handleResetConfirm = async () => {
+    setResetting(true)
+    try {
+      log.warn('User initiated emergency PIN reset')
+
+      // Clear all API keys first
+      apiKeyManagerService.clearSessionCache()
+
+      // Execute emergency wipe and get the new PIN
+      const newPin = await pinProtectionService.emergencyWipe()
+
+      // Display the new PIN to the user
+      setResetPinDisplay(newPin)
+      toastService.success('PIN reset successfully. Your new PIN is: ' + newPin)
+
+      log.info('Emergency wipe completed, new PIN displayed to user')
+
+    } catch (error) {
+      log.error('Failed to reset PIN', { error })
+      toastService.error('Failed to reset PIN. Please try again.')
+      setShowResetConfirmation(false)
+    } finally {
+      setResetting(false)
     }
-    return `${remainingSeconds}s`
+  }
+
+  const handleResetCancel = () => {
+    setShowResetConfirmation(false)
+    setResetPinDisplay(null)
   }
 
   const getProgressColor = (): string => {
-    if (lockoutStatus.attemptsRemaining <= 1) return '#ff4d4f' // danger
-    if (lockoutStatus.attemptsRemaining <= 2) return '#faad14' // warning
+    if (attemptStatus.attemptsRemaining <= 1) return '#ff4d4f' // danger
+    if (attemptStatus.attemptsRemaining <= 2) return '#faad14' // warning
     return '#52c41a' // success
   }
 
@@ -199,48 +193,35 @@ export const PinEntryModal: React.FC<PinEntryModalProps> = ({
       <div className="space-y-4">
         <p className="text-gray-600 text-sm">{description}</p>
 
-        {/* Lockout Status */}
-        {lockoutStatus.isLockedOut ? (
-          <Alert
-            message="Account Locked"
-            description={
-              <div className="space-y-2">
-                <p>Too many failed attempts. Please wait before trying again.</p>
-                <div className="flex items-center justify-between text-sm">
-                  <span>Time remaining:</span>
-                  <span className="font-mono font-bold text-red-600">
-                    {formatTime(countdown)}
-                  </span>
-                </div>
-              </div>
-            }
-            type="error"
-            icon={<LockIcon className="h-4 w-4" />}
-            showIcon
-          />
-        ) : (
-          /* Attempts Remaining */
-          lockoutStatus.attemptsRemaining < 5 && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600">Attempts remaining:</span>
-                <span className={clsx(
-                  'font-semibold',
-                  lockoutStatus.attemptsRemaining <= 1 && 'text-red-600',
-                  lockoutStatus.attemptsRemaining === 2 && 'text-yellow-600',
-                  lockoutStatus.attemptsRemaining > 2 && 'text-green-600'
-                )}>
-                  {lockoutStatus.attemptsRemaining}
-                </span>
-              </div>
-              <Progress
-                percent={(lockoutStatus.attemptsRemaining / 5) * 100}
-                strokeColor={getProgressColor()}
-                showInfo={false}
-                size="small"
-              />
+        {/* Default PIN Hint */}
+        <Alert
+          message="Default PIN"
+          description={getDefaultPinExplanation()}
+          type="info"
+          icon={<InfoIcon className="h-4 w-4" />}
+          showIcon
+        />
+
+        {/* Attempts Remaining */}
+        {attemptStatus.attemptsRemaining < 3 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">Attempts remaining:</span>
+              <span className={clsx(
+                'font-semibold',
+                attemptStatus.attemptsRemaining <= 1 && 'text-red-600',
+                attemptStatus.attemptsRemaining === 2 && 'text-yellow-600'
+              )}>
+                {attemptStatus.attemptsRemaining}
+              </span>
             </div>
-          )
+            <Progress
+              percent={(attemptStatus.attemptsRemaining / 3) * 100}
+              strokeColor={getProgressColor()}
+              showInfo={false}
+              size="small"
+            />
+          </div>
         )}
 
         {/* Error Display */}
@@ -259,7 +240,7 @@ export const PinEntryModal: React.FC<PinEntryModalProps> = ({
         {/* PIN Input Form */}
         <Form
           form={form}
-          onFinish={handleSubmit}
+          onFinish={(values: { pin: string }) => { void handleSubmit(values) }}
           layout="vertical"
           className="space-y-4"
         >
@@ -274,7 +255,7 @@ export const PinEntryModal: React.FC<PinEntryModalProps> = ({
             <Input.Password
               ref={pinInputRef}
               placeholder="Enter your PIN"
-              disabled={loading || lockoutStatus.isLockedOut}
+              disabled={loading}
               size="large"
               className="text-center tracking-widest"
               autoComplete="off"
@@ -293,7 +274,6 @@ export const PinEntryModal: React.FC<PinEntryModalProps> = ({
               type="primary"
               htmlType="submit"
               loading={loading}
-              disabled={lockoutStatus.isLockedOut}
               className="min-w-[80px]"
             >
               {loading ? 'Verifying...' : 'Verify'}
@@ -301,11 +281,145 @@ export const PinEntryModal: React.FC<PinEntryModalProps> = ({
           </div>
         </Form>
 
+        {/* Reset Button */}
+        <Divider className="my-4" />
+        <div className="flex justify-center">
+          <Button
+            type="link"
+            danger
+            icon={<TrashIcon className="h-3.5 w-3.5" />}
+            onClick={handleResetClick}
+            disabled={loading || resetting}
+            size="small"
+          >
+            Forgot PIN? Reset All Data
+          </Button>
+        </div>
+
         {/* Security Notice */}
-        <div className="text-xs text-gray-500 text-center border-t pt-3 mt-4">
-          Your PIN is protected with progressive delays and automatic lockouts for security.
+        <div className="text-xs text-gray-500 text-center border-t pt-3 mt-3">
+          Your PIN is protected with rate limiting and automatic wipe after 3 failed attempts.
         </div>
       </div>
+
+      {/* Reset Confirmation Modal */}
+      <Modal
+        title={
+          <Space className="items-center">
+            <AlertTriangleIcon className="h-5 w-5 text-red-600" />
+            <span>Reset PIN and Delete All Data</span>
+          </Space>
+        }
+        open={showResetConfirmation}
+        onCancel={handleResetCancel}
+        closable={!resetting}
+        maskClosable={!resetting}
+        centered
+        width={500}
+        footer={
+          <div className="flex justify-end space-x-2">
+            <Button onClick={handleResetCancel} disabled={resetting}>
+              Cancel
+            </Button>
+            <Button
+              type="primary"
+              danger
+              icon={<TrashIcon className="h-4 w-4" />}
+              loading={resetting}
+              onClick={() => { void handleResetConfirm() }}
+            >
+              {resetting ? 'Resetting...' : 'Reset PIN and Delete All Data'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          {/* New PIN Display (after reset) */}
+          {resetPinDisplay && (
+            <Alert
+              message="Reset Complete! Your New PIN:"
+              description={
+                <div className="space-y-2">
+                  <div className="text-center">
+                    <div className="font-mono text-2xl font-bold text-green-600 bg-green-50 p-4 rounded border-2 border-green-200 my-2">
+                      {resetPinDisplay}
+                    </div>
+                    <p className="text-sm text-gray-600 mt-2">
+                      {getDefaultPinExplanation()}
+                    </p>
+                  </div>
+                  <p className="text-sm text-gray-700 font-medium">
+                    Please write this down or remember it. This PIN will be required to access secure features.
+                  </p>
+                  <Button
+                    type="primary"
+                    className="w-full"
+                    onClick={() => {
+                      setShowResetConfirmation(false)
+                      setResetPinDisplay(null)
+                      // Reload to ensure clean state
+                      setTimeout(() => window.location.reload(), 500)
+                    }}
+                  >
+                    I've Saved My PIN - Continue
+                  </Button>
+                </div>
+              }
+              type="success"
+              icon={<CheckCircleIcon className="h-5 w-5" />}
+              showIcon
+            />
+          )}
+
+          {/* Warning Alert (before reset) */}
+          {!resetPinDisplay && (
+            <Alert
+              message="This action cannot be undone"
+              description="Resetting your PIN will permanently delete all secure data."
+              type="error"
+              icon={<AlertTriangleIcon className="h-4 w-4" />}
+              showIcon
+            />
+          )}
+
+          {/* What will be deleted */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
+              <ShieldIcon className="h-4 w-4" />
+              <span>The following data will be deleted:</span>
+            </div>
+            <ul className="list-disc list-inside space-y-1 text-sm text-gray-600 ml-6">
+              <li>Current PIN and PIN hash</li>
+              <li>All stored API keys (Claude, OpenAI, Gemini)</li>
+              <li>Security settings and configurations</li>
+              <li>Active session and authentication</li>
+              <li>Failed attempt records and lockout data</li>
+            </ul>
+          </div>
+
+          {/* What happens next */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
+              <InfoIcon className="h-4 w-4" />
+              <span>After reset:</span>
+            </div>
+            <ul className="list-disc list-inside space-y-1 text-sm text-gray-600 ml-6">
+              <li>PIN will reset to default (today&apos;s date in MMDDYY format)</li>
+              <li>You will need to re-enter all API keys</li>
+              <li>Security settings will return to defaults</li>
+              <li>The application will reload to ensure clean state</li>
+            </ul>
+          </div>
+
+          {/* Final warning */}
+          <Alert
+            message="Are you sure you want to proceed?"
+            description="This will permanently delete all your secure data and cannot be recovered."
+            type="warning"
+            showIcon
+          />
+        </div>
+      </Modal>
     </Modal>
   )
 }

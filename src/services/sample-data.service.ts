@@ -33,7 +33,7 @@ const SAMPLE_DATA_ENDPOINTS: SampleDataEndpoint[] = [
   { path: '/issues?limit=200', filename: 'issues.json' },
   { path: '/companies?limit=200', filename: 'companies.json' },
   { path: '/workflows?limit=200', filename: 'workflows.json' },
-  { path: '/workflows/withsteps?limit=200', filename: 'workflows-withsteps.json' },
+  { path: '/workflowsteps?limit=200', filename: 'workflowsteps.json' },
   { path: '/workflowtemplates?limit=200', filename: 'workflowtemplates.json' },
   { path: '/workflowtemplatesteps?limit=200', filename: 'workflowtemplatesteps.json' },
   { path: '/automations?limit=200', filename: 'automations.json' },
@@ -50,14 +50,12 @@ const SAMPLE_DATA_ENDPOINTS: SampleDataEndpoint[] = [
   { path: '/teams', filename: 'teams.json' },
   { path: '/phworkspaces', filename: 'phworkspaces.json' },
   { path: '/phSections', filename: 'phSections.json' },
-  { path: '/pages', filename: 'pages.json' },
   { path: '/pagepointers', filename: 'pagepointers.json' },
   { path: '/integrations', filename: 'integrations.json' },
   { path: '/integrations/salesforce', filename: 'integrations-salesforce.json' },
   { path: '/connectionconfig', filename: 'connectionconfig.json' },
   { path: '/connectiondata', filename: 'connectiondata.json' },
   { path: '/dashboards', filename: 'dashboards.json' },
-  { path: '/widgets', filename: 'widgets.json' },
   { path: '/tableprefs', filename: 'tableprefs.json' },
   { path: '/myprofile', filename: 'myprofile.json' },
   { path: '/myprofile/tenants', filename: 'myprofile-tenants.json' },
@@ -84,8 +82,18 @@ const SAMPLE_DATA_ENDPOINTS: SampleDataEndpoint[] = [
 ]
 
 export class SampleDataService {
+  private cancelRequested = false
+
   private get httpClient() {
     return getHttpClient()
+  }
+
+  /**
+   * Cancel the ongoing sample data collection
+   */
+  cancelCollection(): void {
+    this.cancelRequested = true
+    logger.api.info('Sample data collection cancellation requested')
   }
 
   /**
@@ -99,8 +107,11 @@ export class SampleDataService {
     tenantSlug: string,
     onProgress?: SampleDataProgressCallback
   ): Promise<void> {
+    // Reset cancellation flag at start
+    this.cancelRequested = false
+
     const timestamp = format(new Date(), 'yyyyMMdd-HHmmss')
-    const folderName = `planhat-sample-data-${tenantSlug}-${timestamp}`
+    const folderName = `Planhat Sample Data for ${tenantSlug} ${timestamp}`
     const fullFolderPath = `${baseFolderPath}/${folderName}`
 
     logger.api.info(`Starting sample data collection for tenant: ${tenantSlug}`)
@@ -130,6 +141,13 @@ export class SampleDataService {
 
     // Fetch data from each endpoint sequentially
     for (let i = 0; i < SAMPLE_DATA_ENDPOINTS.length; i++) {
+      // Check for cancellation
+      if (this.cancelRequested) {
+        logger.api.info('Sample data collection cancelled by user')
+        progress.currentEndpoint = 'Cancelled'
+        break
+      }
+
       const endpoint = SAMPLE_DATA_ENDPOINTS[i]
       if (!endpoint) continue // TypeScript safety check
 
@@ -164,6 +182,58 @@ export class SampleDataService {
         })
 
         // Continue to next endpoint even if this one failed
+      }
+    }
+
+    // Fetch detailed workflow data with steps after main collection
+    if (!this.cancelRequested) {
+      try {
+        logger.api.info('Starting detailed workflow data collection...')
+        const workflowErrors = await this.fetchWorkflowsWithSteps(fullFolderPath, (message) => {
+          progress.currentEndpoint = message
+          if (onProgress) {
+            onProgress({ ...progress })
+          }
+        })
+
+        // Add individual workflow errors to progress
+        if (workflowErrors.length > 0) {
+          progress.failed += workflowErrors.length
+          progress.errors.push(...workflowErrors)
+        }
+      } catch (error) {
+        logger.api.error('Failed to fetch detailed workflow data:', error)
+        progress.failed++
+        progress.errors.push({
+          endpoint: 'workflows-with-steps',
+          error: error instanceof Error ? error.message : 'Unknown error'
+        })
+      }
+    }
+
+    // Fetch pages grouped by view mode after main collection
+    if (!this.cancelRequested) {
+      try {
+        logger.api.info('Starting page data collection by view mode...')
+        const pageErrors = await this.fetchPagesByViewMode(fullFolderPath, (message) => {
+          progress.currentEndpoint = message
+          if (onProgress) {
+            onProgress({ ...progress })
+          }
+        })
+
+        // Add individual page errors to progress
+        if (pageErrors.length > 0) {
+          progress.failed += pageErrors.length
+          progress.errors.push(...pageErrors)
+        }
+      } catch (error) {
+        logger.api.error('Failed to fetch pages by view mode:', error)
+        progress.failed++
+        progress.errors.push({
+          endpoint: 'pages-by-viewmode',
+          error: error instanceof Error ? error.message : 'Unknown error'
+        })
       }
     }
 
@@ -216,6 +286,236 @@ export class SampleDataService {
    */
   getEndpoints(): SampleDataEndpoint[] {
     return [...SAMPLE_DATA_ENDPOINTS]
+  }
+
+  /**
+   * Fetch detailed workflow data with steps
+   * Fetches workflowsteps, extracts 25 unique workflow IDs,
+   * then fetches each workflow and its steps individually
+   * @returns Array of errors encountered during fetching
+   */
+  private async fetchWorkflowsWithSteps(
+    fullFolderPath: string,
+    onProgress?: (message: string) => void
+  ): Promise<Array<{ endpoint: string; error: string }>> {
+    const errors: Array<{ endpoint: string; error: string }> = []
+
+    try {
+      logger.api.info('Fetching workflow steps to identify workflows...')
+      if (onProgress) onProgress('Fetching workflow steps...')
+
+      // Step 1: Fetch all workflow steps
+      interface WorkflowStep {
+        workflowId?: string
+        description?: string
+        [key: string]: unknown
+      }
+
+      const allSteps = await this.httpClient.get<WorkflowStep[]>('/workflowsteps?limit=500')
+
+      // Step 2: Extract unique workflow IDs
+      const workflowIds = new Set<string>()
+      for (const step of allSteps) {
+        if (step.workflowId) {
+          workflowIds.add(step.workflowId)
+        }
+      }
+
+      // Step 3: Take first 25 unique workflow IDs
+      const selectedWorkflowIds = Array.from(workflowIds).slice(0, 25)
+      logger.api.info(`Found ${workflowIds.size} unique workflows, selecting first 25`)
+
+      // Step 4: Fetch each workflow and its steps
+      const workflowsWithSteps: Array<{
+        workflow: unknown
+        steps: unknown[]
+      }> = []
+
+      for (let i = 0; i < selectedWorkflowIds.length; i++) {
+        // Check for cancellation
+        if (this.cancelRequested) {
+          logger.api.info('Workflow fetching cancelled by user')
+          break
+        }
+
+        const workflowId = selectedWorkflowIds[i]
+        if (!workflowId) continue
+
+        const progressMsg = `Fetching workflow ${i + 1}/${selectedWorkflowIds.length}: ${workflowId}`
+        logger.api.info(progressMsg)
+        if (onProgress) onProgress(progressMsg)
+
+        try {
+          // Fetch workflow details
+          const workflow = await this.httpClient.get(`/workflows/${workflowId}`)
+
+          // Fetch workflow steps (with steps embedded)
+          const stepsResponse = await this.httpClient.get(`/workflows/${workflowId}/withsteps`)
+
+          // Handle both array and object responses
+          let steps: unknown[] = []
+          if (Array.isArray(stepsResponse)) {
+            // Response is already an array
+            steps = stepsResponse
+          } else if (stepsResponse && typeof stepsResponse === 'object') {
+            // Response is an object, convert to array with single item
+            steps = [stepsResponse]
+          }
+
+          // Remove description field from steps to save space
+          const stepsWithoutDescription = steps.map((step: any) => {
+            if (step && typeof step === 'object') {
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              const { description, ...stepWithoutDescription } = step
+              return stepWithoutDescription
+            }
+            return step
+          })
+
+          workflowsWithSteps.push({
+            workflow,
+            steps: stepsWithoutDescription
+          })
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+          logger.api.warn(`Failed to fetch workflow ${workflowId}:`, errorMessage)
+          errors.push({
+            endpoint: `/workflows/${workflowId}`,
+            error: errorMessage
+          })
+          // Continue to next workflow even if this one fails
+        }
+
+        // Add a small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+
+      // Step 5: Write the combined data to file
+      const filePath = `${fullFolderPath}/workflows-with-steps.json`
+      await window.electron.sampleData.writeFile(filePath, workflowsWithSteps)
+
+      logger.api.info(`Successfully saved ${workflowsWithSteps.length} workflows with steps`)
+      if (onProgress) onProgress(`Saved ${workflowsWithSteps.length} workflows with steps`)
+
+      return errors
+    } catch (error) {
+      logger.api.error('Failed to fetch workflows with steps:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Fetch pages grouped by pageViewMode
+   * Analyzes pagepointers to find unique pageViewModes,
+   * then fetches 5 sample pages for each view mode
+   * @returns Array of errors encountered during fetching
+   */
+  private async fetchPagesByViewMode(
+    fullFolderPath: string,
+    onProgress?: (message: string) => void
+  ): Promise<Array<{ endpoint: string; error: string }>> {
+    const errors: Array<{ endpoint: string; error: string }> = []
+
+    try {
+      logger.api.info('Analyzing pagepointers to identify page view modes...')
+      if (onProgress) onProgress('Analyzing pagepointers...')
+
+      // Step 1: Read the pagepointers file that was already fetched
+      const pagePointersPath = `${fullFolderPath}/pagepointers.json`
+
+      // Note: We can't read from the file system in the renderer, so we'll fetch it again
+      // This is simpler than passing data between methods
+      interface PagePointer {
+        _id?: string
+        pageId?: string
+        pageViewMode?: string
+        pageDoesNotExist?: boolean
+        [key: string]: unknown
+      }
+
+      const pagePointers = await this.httpClient.get<PagePointer[]>('/pagepointers?limit=500')
+      logger.api.info(`Fetched ${pagePointers.length} pagepointers`)
+
+      // Step 2: Group page IDs by pageViewMode and filter out pages that don't exist
+      const pagesByViewMode = new Map<string, string[]>()
+
+      for (const pointer of pagePointers) {
+        // Skip if page doesn't exist or doesn't have required fields
+        if (pointer.pageDoesNotExist || !pointer.pageId || !pointer.pageViewMode) {
+          continue
+        }
+
+        const viewMode = pointer.pageViewMode
+        if (!pagesByViewMode.has(viewMode)) {
+          pagesByViewMode.set(viewMode, [])
+        }
+        pagesByViewMode.get(viewMode)?.push(pointer.pageId)
+      }
+
+      logger.api.info(`Found ${pagesByViewMode.size} unique page view modes:`, Array.from(pagesByViewMode.keys()))
+
+      // Step 3: Fetch 5 pages for each view mode
+      const pagesByViewModeResult: Record<string, unknown[]> = {}
+
+      for (const [viewMode, pageIds] of pagesByViewMode.entries()) {
+        // Check for cancellation
+        if (this.cancelRequested) {
+          logger.api.info('Page fetching cancelled by user')
+          break
+        }
+
+        // Take first 5 page IDs for this view mode
+        const selectedPageIds = pageIds.slice(0, 5)
+        pagesByViewModeResult[viewMode] = []
+
+        logger.api.info(`Fetching ${selectedPageIds.length} pages for view mode: ${viewMode}`)
+
+        for (let i = 0; i < selectedPageIds.length; i++) {
+          // Check for cancellation
+          if (this.cancelRequested) {
+            logger.api.info('Page fetching cancelled by user')
+            break
+          }
+
+          const pageId = selectedPageIds[i]
+          if (!pageId) continue
+
+          const progressMsg = `Fetching ${viewMode} page ${i + 1}/${selectedPageIds.length}: ${pageId}`
+          logger.api.info(progressMsg)
+          if (onProgress) onProgress(progressMsg)
+
+          try {
+            // Fetch page details
+            const page = await this.httpClient.get(`/pages/${pageId}`)
+            pagesByViewModeResult[viewMode]?.push(page)
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+            logger.api.warn(`Failed to fetch page ${pageId}:`, errorMessage)
+            errors.push({
+              endpoint: `/pages/${pageId}`,
+              error: errorMessage
+            })
+            // Continue to next page even if this one fails
+          }
+
+          // Add a small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+      }
+
+      // Step 4: Write the pages data to file
+      const pagesFilePath = `${fullFolderPath}/pages-by-viewmode.json`
+      await window.electron.sampleData.writeFile(pagesFilePath, pagesByViewModeResult)
+
+      const totalPages = Object.values(pagesByViewModeResult).reduce((sum, pages) => sum + pages.length, 0)
+      logger.api.info(`Successfully saved ${totalPages} pages across ${pagesByViewMode.size} view modes`)
+      if (onProgress) onProgress(`Saved ${totalPages} pages across ${pagesByViewMode.size} view modes`)
+
+      return errors
+    } catch (error) {
+      logger.api.error('Failed to fetch pages by view mode:', error)
+      throw error
+    }
   }
 }
 

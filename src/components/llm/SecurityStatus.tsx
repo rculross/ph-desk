@@ -11,8 +11,8 @@ import {
   RefreshCwIcon,
   TrashIcon
 } from 'lucide-react'
-import toast from 'react-hot-toast'
 
+import { toastService } from '@/services/toast.service'
 import { pinProtectionService } from '../../services/pin-protection.service'
 import { logger } from '../../utils/logger'
 
@@ -30,8 +30,6 @@ interface SessionStatus {
   isValid: boolean
   remainingTime: number
   sessionId?: string
-  isLockedOut: boolean
-  lockoutTime: number
   attemptsRemaining: number
 }
 
@@ -43,9 +41,7 @@ export const SecurityStatus: React.FC<SecurityStatusProps> = ({
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>({
     isValid: false,
     remainingTime: 0,
-    isLockedOut: false,
-    lockoutTime: 0,
-    attemptsRemaining: 5
+    attemptsRemaining: 3
   })
   const [loading, setLoading] = useState(false)
   const [showPinModal, setShowPinModal] = useState(false)
@@ -72,8 +68,8 @@ export const SecurityStatus: React.FC<SecurityStatusProps> = ({
       setRefreshing(true)
       log.debug('Refreshing security status')
 
-      const [lockoutStatus] = await Promise.all([
-        pinProtectionService.getLockoutStatus()
+      const [attemptStatus] = await Promise.all([
+        pinProtectionService.getAttemptStatus()
       ])
 
       const isSessionValid = pinProtectionService.isSessionValid()
@@ -82,20 +78,18 @@ export const SecurityStatus: React.FC<SecurityStatusProps> = ({
       setSessionStatus({
         isValid: isSessionValid,
         remainingTime,
-        isLockedOut: lockoutStatus.isLockedOut,
-        lockoutTime: lockoutStatus.remainingTime,
-        attemptsRemaining: lockoutStatus.attemptsRemaining
+        attemptsRemaining: attemptStatus.attemptsRemaining
       })
 
       log.debug('Security status refreshed', {
         isValid: isSessionValid,
         remainingTime,
-        isLockedOut: lockoutStatus.isLockedOut
+        attemptsRemaining: attemptStatus.attemptsRemaining
       })
 
     } catch (error) {
       log.error('Failed to refresh security status', { error })
-      toast.error('Failed to refresh security status')
+      toastService.error('Failed to refresh security status')
     } finally {
       setRefreshing(false)
     }
@@ -109,11 +103,11 @@ export const SecurityStatus: React.FC<SecurityStatusProps> = ({
       await pinProtectionService.extendSession()
       await refreshStatus()
 
-      toast.success('Session extended successfully')
+      toastService.success('Session extended successfully')
 
     } catch (error) {
       log.error('Failed to extend session', { error })
-      toast.error('Failed to extend session')
+      toastService.error('Failed to extend session')
     } finally {
       setLoading(false)
     }
@@ -127,11 +121,11 @@ export const SecurityStatus: React.FC<SecurityStatusProps> = ({
       await pinProtectionService.lockSession()
       await refreshStatus()
 
-      toast.success('Session locked successfully')
+      toastService.success('Session locked successfully')
 
     } catch (error) {
       log.error('Failed to lock session', { error })
-      toast.error('Failed to lock session')
+      toastService.error('Failed to lock session')
     } finally {
       setLoading(false)
     }
@@ -144,7 +138,7 @@ export const SecurityStatus: React.FC<SecurityStatusProps> = ({
   const handlePinSuccess = async () => {
     setShowPinModal(false)
     await refreshStatus()
-    toast.success('Session unlocked successfully')
+    toastService.success('Session unlocked successfully')
   }
 
   const handlePinCancel = () => {
@@ -159,11 +153,11 @@ export const SecurityStatus: React.FC<SecurityStatusProps> = ({
       await pinProtectionService.emergencyWipe()
       await refreshStatus()
 
-      toast.success('Emergency wipe completed - all data cleared')
+      toastService.success('Emergency wipe completed - all data cleared')
 
     } catch (error) {
       log.error('Emergency wipe failed', { error })
-      toast.error('Emergency wipe failed')
+      toastService.error('Emergency wipe failed')
     } finally {
       setLoading(false)
       setShowWipeModal(false)
@@ -197,9 +191,6 @@ export const SecurityStatus: React.FC<SecurityStatusProps> = ({
   }
 
   const getStatusBadge = () => {
-    if (sessionStatus.isLockedOut) {
-      return <Badge status="error" text="Locked Out" />
-    }
     if (sessionStatus.isValid) {
       return <Badge status="success" text="Active" />
     }
@@ -290,28 +281,11 @@ export const SecurityStatus: React.FC<SecurityStatusProps> = ({
             </div>
           )}
 
-          {/* Lockout Status */}
-          {sessionStatus.isLockedOut && (
-            <Alert
-              message="Account Locked"
-              description={
-                <div className="space-y-1">
-                  <div>Too many failed attempts.</div>
-                  <div className="text-sm">
-                    Lockout expires in: <strong>{formatTime(sessionStatus.lockoutTime)}</strong>
-                  </div>
-                </div>
-              }
-              type="error"
-              showIcon
-            />
-          )}
-
           {/* Failed Attempts Warning */}
-          {!sessionStatus.isLockedOut && sessionStatus.attemptsRemaining < 5 && (
+          {sessionStatus.attemptsRemaining < 3 && (
             <Alert
               message="Security Warning"
-              description={`${sessionStatus.attemptsRemaining} PIN attempts remaining before lockout.`}
+              description={`${sessionStatus.attemptsRemaining} PIN attempts remaining before emergency wipe.`}
               type="warning"
               showIcon
             />
@@ -326,7 +300,6 @@ export const SecurityStatus: React.FC<SecurityStatusProps> = ({
                   icon={<RefreshCwIcon className="h-4 w-4" />}
                   onClick={handleExtendSession}
                   loading={loading}
-                  disabled={sessionStatus.isLockedOut}
                 >
                   Extend Session
                 </Button>
@@ -343,7 +316,6 @@ export const SecurityStatus: React.FC<SecurityStatusProps> = ({
                 type="primary"
                 icon={<UnlockIcon className="h-4 w-4" />}
                 onClick={handleUnlockSession}
-                disabled={sessionStatus.isLockedOut}
               >
                 Unlock Session
               </Button>
@@ -363,7 +335,7 @@ export const SecurityStatus: React.FC<SecurityStatusProps> = ({
           <div className="text-xs text-gray-500 border-t pt-3">
             <div className="space-y-1">
               <div>• Sessions automatically expire after 30 minutes of inactivity</div>
-              <div>• Failed PIN attempts trigger progressive delays and lockouts</div>
+              <div>• 3 failed PIN attempts trigger automatic emergency wipe</div>
               <div>• Emergency wipe clears all stored credentials immediately</div>
             </div>
           </div>

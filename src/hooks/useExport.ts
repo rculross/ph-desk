@@ -8,8 +8,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 
 import { useQuery } from '@tanstack/react-query'
-import { toast } from 'react-hot-toast'
 
+import { toastService } from '@/services/toast.service'
 import {
   exportService,
   type ExportProgress,
@@ -142,7 +142,7 @@ export function useExport(): UseExportResult {
         }, 1000)
       }
 
-      toast.success('Export started successfully')
+      toastService.success('Export started successfully')
       return jobId
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Export failed to start'
@@ -153,7 +153,7 @@ export function useExport(): UseExportResult {
         format: request.format
       })
       
-      toast.error(message)
+      toastService.error(message)
       throw error
     }
   }, [log])
@@ -182,7 +182,7 @@ export function useExport(): UseExportResult {
           }, 1000)
         }
 
-        toast.success('Large dataset export started')
+        toastService.success('Large dataset export started')
         return jobId
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Streaming export failed to start'
@@ -194,7 +194,7 @@ export function useExport(): UseExportResult {
           totalRecords: request.totalRecords
         })
         
-        toast.error(message)
+        toastService.error(message)
         throw error
       }
     },
@@ -207,7 +207,7 @@ export function useExport(): UseExportResult {
     const success = exportService.cancelExport(jobId)
     if (success) {
       log.info('Export cancelled successfully', { jobId })
-      toast.success('Export cancelled')
+      toastService.success('Export cancelled')
       setActiveJobs(prev => prev.filter(job => job.jobId !== jobId))
     } else {
       log.warn('Failed to cancel export - job not found', { jobId })
@@ -330,7 +330,7 @@ export function useExportProgress(jobId: string | undefined): UseExportProgressR
     const success = exportService.cancelExport(jobId)
     if (success) {
       log.info('Export cancelled successfully from progress hook', { jobId })
-      toast.success('Export cancelled')
+      toastService.success('Export cancelled')
     } else {
       log.warn('Failed to cancel export from progress hook', { jobId })
     }
@@ -360,7 +360,7 @@ export function useExportProgress(jobId: string | undefined): UseExportProgressR
         filename
       })
       
-      toast.success('Download started')
+      toastService.success('Download started')
     } else {
       log.warn('Attempted to download but no download URL available', {
         jobId: progress?.jobId,

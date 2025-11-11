@@ -134,7 +134,7 @@ export function LogSettings() {
           disabled={saving}
           loading={saving}
           placeholder="Select log level..."
-          className="max-w-sm"
+          className="w-full"
           status={error ? 'error' : undefined}
         />
         {error && (

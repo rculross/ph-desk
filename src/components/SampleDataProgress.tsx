@@ -12,12 +12,14 @@ export interface SampleDataProgressProps {
   progress: SampleDataProgress
   isOpen: boolean
   onClose: () => void
+  onCancel?: () => void
 }
 
 export const SampleDataProgressModal: React.FC<SampleDataProgressProps> = ({
   progress,
   isOpen,
-  onClose
+  onClose,
+  onCancel
 }) => {
   if (!isOpen) return null
 
@@ -26,7 +28,7 @@ export const SampleDataProgressModal: React.FC<SampleDataProgressProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="relative w-full max-w-2xl rounded-lg bg-white shadow-xl">
+      <div className="relative w-full rounded-lg bg-white shadow-xl" style={{ maxWidth: '500px' }}>
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
           <div className="flex items-center gap-3">
@@ -49,7 +51,7 @@ export const SampleDataProgressModal: React.FC<SampleDataProgressProps> = ({
         {/* Content */}
         <div className="px-6 py-4">
           {/* Progress Bar */}
-          <div className="mb-4">
+          <div className="mb-3">
             <div className="mb-2 flex items-center justify-between text-sm">
               <span className="font-medium text-gray-700">
                 {progress.isComplete ? 'Complete' : 'In Progress'}
@@ -73,12 +75,9 @@ export const SampleDataProgressModal: React.FC<SampleDataProgressProps> = ({
           {!progress.isComplete && progress.currentEndpoint && (
             <div className="mb-4 rounded-lg bg-blue-50 p-3">
               <div className="flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                <div className="flex-1">
-                  <div className="text-xs font-medium text-blue-900">
-                    Fetching data from:
-                  </div>
-                  <div className="font-mono text-sm text-blue-700">
+                <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin text-blue-600" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-mono text-sm text-blue-700" title={progress.currentEndpoint}>
                     {progress.currentEndpoint}
                   </div>
                 </div>
@@ -155,19 +154,28 @@ export const SampleDataProgressModal: React.FC<SampleDataProgressProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 border-t border-gray-200 px-6 py-4">
-          {canClose ? (
-            <button
-              onClick={onClose}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              Close
-            </button>
-          ) : (
-            <div className="text-sm text-gray-500">
-              Please wait while data is being collected...
-            </div>
-          )}
+        <div className="flex items-center justify-between border-t border-gray-200 px-6 py-4">
+          <div className="text-sm text-gray-500">
+            {!canClose && 'Please wait while data is being collected...'}
+          </div>
+          <div className="flex items-center gap-3">
+            {!canClose && onCancel && (
+              <button
+                onClick={onCancel}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            )}
+            {canClose && (
+              <button
+                onClick={onClose}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                Close
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -29,8 +29,8 @@ import {
   CopyIcon,
   TrashIcon
 } from 'lucide-react'
-import toast from 'react-hot-toast'
 
+import { toastService } from '@/services/toast.service'
 import { useTableCore } from '../../hooks/useTableCore'
 import type {
   ChatMessage,
@@ -191,7 +191,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     } catch (error) {
       log.error('Failed to send message', { error })
-      toast.error(`Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toastService.error(`Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`)
 
       // Remove streaming message on error
       setStreamingMessage(null)
@@ -220,9 +220,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const copyMessage = async (content: string) => {
     try {
       await navigator.clipboard.writeText(content)
-      toast.success('Message copied to clipboard')
+      toastService.success('Message copied to clipboard')
     } catch (error) {
-      toast.error('Failed to copy message')
+      toastService.error('Failed to copy message')
     }
   }
 
@@ -230,7 +230,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     setMessages([])
     setStreamingMessage(null)
     onClearChat?.()
-    toast.success('Chat cleared')
+    toastService.success('Chat cleared')
   }
 
   const getCurrentModelData = () => {

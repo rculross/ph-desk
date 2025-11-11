@@ -1,9 +1,8 @@
-const { app, BrowserWindow, Menu, ipcMain, safeStorage, globalShortcut } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, safeStorage, globalShortcut, dialog } = require('electron');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 const packageJson = require('../package.json');
-const ElectronPreferences = require('electron-preferences');
 const {
   createAuthWindow,
   restoreCookies,
@@ -16,8 +15,7 @@ const {
   togglePlanhatBrowser,
   isPlanhatBrowserOpen
 } = require('./planhat-browser.cjs');
-const { initializeMenu, setMainWindow: setMenuMainWindow, setPreferencesGetter } = require('./menu.cjs');
-const { getPreferencesSchema } = require('./config/preferences-schema.cjs');
+const { initializeMenu, setMainWindow: setMenuMainWindow, updateWindowMenu } = require('./menu.cjs');
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -26,9 +24,6 @@ let store = null;
 
 // Main window reference for auth window parent
 let mainWindow = null;
-
-// Preferences instance
-let preferences = null;
 
 // ============================================================================
 // Encryption Key Management
@@ -182,112 +177,6 @@ async function initializeStore() {
   }
 }
 
-/**
- * Initialize electron-preferences with migration from old format
- * @returns {ElectronPreferences} Initialized preferences instance
- */
-function initializePreferences() {
-  console.log('[Preferences] Initializing electron-preferences...');
-
-  // Get the schema
-  const schema = getPreferencesSchema();
-
-  // Initialize preferences
-  preferences = new ElectronPreferences({
-    dataStore: store.path,  // Use same data file as electron-store
-    ...schema,
-    // CSS customization for better native look
-    css: `
-      /* Custom styles for better integration */
-      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; }
-    `
-  });
-
-  // Migrate old preferences format to new flat format
-  migratePreferences();
-
-  console.log('[Preferences] Electron-preferences initialized successfully');
-
-  return preferences;
-}
-
-/**
- * Migrate preferences from old nested format to new flat format
- * Old format: { general: { theme: 'system', ... }, export: { ... }, api: { rateLimit: { ... } }, advanced: { ... } }
- * New format: { theme: 'system', rateLimitEnabled: true, requestsPerSecond: 10, ... }
- */
-function migratePreferences() {
-  try {
-    const oldPrefs = store.get('preferences');
-
-    if (!oldPrefs) {
-      console.log('[Preferences] No existing preferences to migrate');
-      return;
-    }
-
-    // Check if already in new format (flat structure with top-level keys)
-    if (oldPrefs.theme !== undefined || oldPrefs.rateLimitEnabled !== undefined) {
-      console.log('[Preferences] Preferences already in new format');
-      return;
-    }
-
-    console.log('[Preferences] Migrating preferences from old nested format to new flat format...');
-
-    // Build migrated preferences object
-    const migrated = {};
-
-    // General section
-    if (oldPrefs.general) {
-      migrated.theme = oldPrefs.general.theme;
-      migrated.startupBehavior = oldPrefs.general.startupBehavior;
-      migrated.autoUpdate = oldPrefs.general.autoUpdate;
-      migrated.notifications = oldPrefs.general.notifications;
-    }
-
-    // Export section
-    if (oldPrefs.export) {
-      migrated.defaultFormat = oldPrefs.export.defaultFormat;
-      migrated.defaultPath = oldPrefs.export.defaultPath;
-      migrated.openAfterExport = oldPrefs.export.openAfterExport;
-      migrated.includeHeaders = oldPrefs.export.includeHeaders;
-      migrated.dateFormat = oldPrefs.export.dateFormat;
-      migrated.encoding = oldPrefs.export.encoding;
-    }
-
-    // API section (flatten rateLimit object)
-    if (oldPrefs.api) {
-      if (oldPrefs.api.rateLimit) {
-        migrated.rateLimitEnabled = oldPrefs.api.rateLimit.enabled;
-        migrated.requestsPerSecond = oldPrefs.api.rateLimit.requestsPerSecond;
-        migrated.maxConcurrent = oldPrefs.api.rateLimit.maxConcurrent;
-      }
-      migrated.timeout = oldPrefs.api.timeout;
-      migrated.retries = oldPrefs.api.retries;
-      migrated.retryDelay = oldPrefs.api.retryDelay;
-    }
-
-    // Advanced section
-    if (oldPrefs.advanced) {
-      migrated.logLevel = oldPrefs.advanced.logLevel;
-      migrated.cacheEnabled = oldPrefs.advanced.cacheEnabled;
-      migrated.cacheDuration = oldPrefs.advanced.cacheDuration;
-      migrated.developerMode = oldPrefs.advanced.developerMode;
-      migrated.experimentalFeatures = oldPrefs.advanced.experimentalFeatures;
-    }
-
-    // Save migrated preferences
-    store.set('preferences', migrated);
-    console.log('[Preferences] Migration completed successfully');
-
-    // Log what was migrated
-    const migratedKeys = Object.keys(migrated);
-    console.log(`[Preferences] Migrated ${migratedKeys.length} settings: ${migratedKeys.join(', ')}`);
-
-  } catch (error) {
-    console.error('[Preferences] Error during migration:', error);
-    // Don't fail, just continue with defaults
-  }
-}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -368,6 +257,121 @@ function createWindow() {
     mainWindow.maximize(); // Maximize window to full screen
   });
 
+  // Apply DevTools network filter to hide local network requests
+  mainWindow.webContents.on('devtools-opened', () => {
+    const devToolsWebContents = mainWindow.webContents.devToolsWebContents;
+
+    if (devToolsWebContents) {
+      // Apply filter to hide local network requests from Network tab
+      // This uses the DevTools filter syntax: - prefix means "exclude"
+      // Filters out: localhost, 127.x.x.x, 192.168.x.x, 10.x.x.x, 172.16-31.x.x, ::1
+      const filterPattern = '-url:localhost -url:127.0.0.1 -url:192.168. -url:10. -url:172.1 -url:172.2 -url:172.3 -url:[::1]';
+
+      // Try multiple approaches to set the filter (DevTools internals change frequently)
+      const attemptSetFilter = (attempt = 1, maxAttempts = 10) => {
+        setTimeout(() => {
+          devToolsWebContents.executeJavaScript(`
+            (function() {
+              try {
+                const filterPattern = '${filterPattern}';
+                let filterSet = false;
+
+                // Method 1: Try modern DevTools UI structure (Chromium 120+)
+                // Look for the filter input by searching the DOM
+                const filterInput = document.querySelector('.toolbar input[type="text"][placeholder*="Filter"], .toolbar input[aria-label*="Filter"], input[aria-label*="filter"]');
+                if (filterInput && !filterSet) {
+                  filterInput.value = filterPattern;
+                  filterInput.dispatchEvent(new Event('input', { bubbles: true }));
+                  filterInput.dispatchEvent(new Event('change', { bubbles: true }));
+                  console.log('[DevTools Filter] Applied via DOM input (Method 1)');
+                  filterSet = true;
+                  return { success: true, method: 'DOM input' };
+                }
+
+                // Method 2: Try legacy UI.panels structure (older Chromium)
+                if (window.UI && window.UI.panels && window.UI.panels.network && !filterSet) {
+                  const networkPanel = window.UI.panels.network;
+                  if (networkPanel._networkLogView && networkPanel._networkLogView._textFilterUI) {
+                    networkPanel._networkLogView._textFilterUI.setValue(filterPattern);
+                    console.log('[DevTools Filter] Applied via UI.panels (Method 2)');
+                    filterSet = true;
+                    return { success: true, method: 'UI.panels' };
+                  }
+                }
+
+                // Method 3: Try Root.Runtime approach (some Chromium versions)
+                if (window.Root && window.Root.Runtime && !filterSet) {
+                  const runtime = window.Root.Runtime;
+                  if (runtime.experiments && runtime.experiments.setEnabled) {
+                    // Try to find and set the network filter
+                    const views = document.querySelectorAll('.network-log-grid');
+                    if (views.length > 0) {
+                      const filterInput = views[0].querySelector('input[type="text"]');
+                      if (filterInput) {
+                        filterInput.value = filterPattern;
+                        filterInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        console.log('[DevTools Filter] Applied via Root.Runtime (Method 3)');
+                        filterSet = true;
+                        return { success: true, method: 'Root.Runtime' };
+                      }
+                    }
+                  }
+                }
+
+                // Method 4: Generic DOM search - find any text input in toolbar area
+                if (!filterSet) {
+                  const toolbarInputs = document.querySelectorAll('.toolbar input[type="text"], .network-toolbar input[type="text"]');
+                  for (let input of toolbarInputs) {
+                    // Check if this looks like a filter input (has filter-related attributes or is in the right location)
+                    const isFilterInput =
+                      input.placeholder?.toLowerCase().includes('filter') ||
+                      input.ariaLabel?.toLowerCase().includes('filter') ||
+                      input.className?.toLowerCase().includes('filter') ||
+                      input.closest('.toolbar')?.querySelector('.clear-button');
+
+                    if (isFilterInput) {
+                      input.value = filterPattern;
+                      input.dispatchEvent(new Event('input', { bubbles: true }));
+                      input.dispatchEvent(new Event('change', { bubbles: true }));
+                      console.log('[DevTools Filter] Applied via generic DOM search (Method 4)');
+                      filterSet = true;
+                      return { success: true, method: 'Generic DOM' };
+                    }
+                  }
+                }
+
+                if (!filterSet) {
+                  return { success: false, error: 'No filter input found' };
+                }
+              } catch (e) {
+                return { success: false, error: e.message };
+              }
+            })();
+          `).then(result => {
+            if (result && result.success) {
+              console.log(`[DevTools] Network filter applied successfully using ${result.method}`);
+            } else if (attempt < maxAttempts) {
+              console.log(`[DevTools] Filter attempt ${attempt}/${maxAttempts} failed: ${result?.error || 'unknown'}, retrying...`);
+              attemptSetFilter(attempt + 1, maxAttempts);
+            } else {
+              console.log(`[DevTools] Could not apply network filter after ${maxAttempts} attempts. Filter must be set manually in DevTools.`);
+            }
+          }).catch(err => {
+            if (attempt < maxAttempts) {
+              console.log(`[DevTools] Filter attempt ${attempt}/${maxAttempts} error: ${err.message}, retrying...`);
+              attemptSetFilter(attempt + 1, maxAttempts);
+            } else {
+              console.log(`[DevTools] Could not apply network filter after ${maxAttempts} attempts: ${err.message}`);
+            }
+          });
+        }, attempt === 1 ? 1000 : 500); // First attempt waits 1s, subsequent attempts wait 500ms
+      };
+
+      // Start attempting to set the filter
+      attemptSetFilter();
+    }
+  });
+
   // Load app
   if (isDev) {
     // Try multiple ports in case 5173 is in use
@@ -381,6 +385,11 @@ function createWindow() {
   // Handle window events
   mainWindow.on('closed', () => {
     // Dereference the window object
+  });
+
+  // Update menu when main window gains focus
+  mainWindow.on('focus', () => {
+    updateWindowMenu();
   });
 
   // Initialize application menu (delegated to menu.cjs)
@@ -398,11 +407,6 @@ app.whenReady().then(async () => {
   await initializeStore();
   console.log('Electron store initialized');
 
-  // Initialize electron-preferences
-  initializePreferences();
-
-  // Set preferences getter for menu
-  setPreferencesGetter(getPreferences);
 
   // Restore saved authentication session
   try {
@@ -445,6 +449,13 @@ app.whenReady().then(async () => {
   createWindow();
 
   // Register global keyboard shortcuts for DevTools
+  // F12 - Universal DevTools shortcut (works on all platforms)
+  globalShortcut.register('F12', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.toggleDevTools();
+    }
+  });
+
   // Support both Chrome (Cmd+Option+J) and Electron (Cmd+Option+I) shortcuts on macOS
   if (process.platform === 'darwin') {
     globalShortcut.register('CommandOrControl+Option+J', () => {
@@ -500,21 +511,6 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-/**
- * Get preferences instance (used by menu.cjs)
- * @returns {ElectronPreferences|null} Preferences instance
- */
-function getPreferences() {
-  return preferences;
-}
-
-// ============================================================================
-// Exports for menu.cjs
-// ============================================================================
-
-module.exports = {
-  getPreferences
-};
 
 // ============================================================================
 // Storage IPC Handlers
@@ -906,6 +902,81 @@ ipcMain.handle('window:setTitle', async (event, title) => {
 });
 
 // ============================================================================
+// Tenant Storage IPC Handlers
+// ============================================================================
+
+/**
+ * Get tenant storage data
+ * NOTE: Only lastProdTenant is persisted between sessions
+ * Demo tenants are stored in-memory only (Zustand store)
+ * @returns {Promise<{lastProdTenant: string|null}>}
+ */
+ipcMain.handle('tenant:get-storage', async () => {
+  try {
+    if (!store) {
+      console.warn('[Main] Store not initialized yet');
+      return { lastProdTenant: null };
+    }
+
+    const tenantStorage = store.get('tenant-storage') || {};
+    console.log('[Main] Retrieved tenant storage:', tenantStorage);
+
+    return {
+      lastProdTenant: tenantStorage.lastProdTenant || null
+    };
+  } catch (error) {
+    console.error('[Main] Error getting tenant storage:', error);
+    return { lastProdTenant: null };
+  }
+});
+
+/**
+ * Save tenant storage data (production tenants only)
+ * NOTE: Only production tenants are persisted between sessions
+ * Demo tenants are stored in-memory only and cleared on app restart
+ * @param {string} tenantSlug - Production tenant slug to save
+ * @returns {Promise<void>}
+ */
+ipcMain.handle('tenant:save-storage', async (event, tenantSlug) => {
+  try {
+    if (!store) {
+      console.warn('[Main] Store not initialized yet');
+      return;
+    }
+
+    // Get existing storage and update production tenant
+    const tenantStorage = store.get('tenant-storage') || {};
+    tenantStorage.lastProdTenant = tenantSlug;
+    tenantStorage.updatedAt = Date.now();
+
+    store.set('tenant-storage', tenantStorage);
+    console.log('[Main] Saved tenant storage:', tenantStorage);
+  } catch (error) {
+    console.error('[Main] Error saving tenant storage:', error);
+    throw error;
+  }
+});
+
+/**
+ * Clear tenant storage data
+ * @returns {Promise<void>}
+ */
+ipcMain.handle('tenant:clear-storage', async () => {
+  try {
+    if (!store) {
+      console.warn('[Main] Store not initialized yet');
+      return;
+    }
+
+    store.delete('tenant-storage');
+    console.log('[Main] Cleared tenant storage');
+  } catch (error) {
+    console.error('[Main] Error clearing tenant storage:', error);
+    throw error;
+  }
+});
+
+// ============================================================================
 // Sample Data IPC Handlers
 // ============================================================================
 
@@ -917,8 +988,8 @@ ipcMain.handle('sample-data:select-folder', async () => {
   try {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openDirectory', 'createDirectory'],
-      title: 'Select Folder for Sample Data',
-      buttonLabel: 'Select Folder'
+      title: 'Save Sample Data',
+      buttonLabel: 'Save'
     });
 
     if (result.canceled || result.filePaths.length === 0) {
@@ -940,6 +1011,11 @@ ipcMain.handle('sample-data:select-folder', async () => {
  */
 ipcMain.handle('sample-data:write-file', async (event, filePath, data) => {
   try {
+    // Create directory structure if it doesn't exist
+    const dirPath = path.dirname(filePath);
+    await fs.promises.mkdir(dirPath, { recursive: true });
+
+    // Write the file
     const jsonContent = JSON.stringify(data, null, 2);
     await fs.promises.writeFile(filePath, jsonContent, 'utf-8');
     console.log(`[Main] Sample data file written: ${filePath}`);

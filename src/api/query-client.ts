@@ -1,6 +1,5 @@
 import { QueryClient, QueryCache, MutationCache } from '@tanstack/react-query'
 
-import { useAppStore } from '../stores/app.store'
 import { useAuthStore } from '../stores/auth.store'
 import { logger } from '../utils/logger'
 
@@ -85,28 +84,6 @@ function handleQueryError(error: unknown): void {
   // Log the error with appropriate level
   logError(apiError, 'error')
 
-  // Don't show notifications for certain error types
-  const silentErrors = [ERROR_CODES.NOT_FOUND, ERROR_CODES.UNAUTHORIZED]
-
-  if (!silentErrors.includes(apiError.code as any)) {
-    // Add error notification with user-friendly message
-    useAppStore.getState().addNotification({
-      type: 'error',
-      title: 'Query Error',
-      message: getUserFriendlyMessage(apiError),
-      actions: apiError.retryable
-        ? [
-            {
-              label: 'Retry',
-              action: () => {
-                // Retry logic would be handled by the query hook
-              }
-            }
-          ]
-        : undefined
-    })
-  }
-
   // Handle specific error types
   if (apiError.code === ERROR_CODES.UNAUTHORIZED || apiError.code === ERROR_CODES.TOKEN_EXPIRED) {
     // Clear auth state if unauthorized
@@ -127,23 +104,6 @@ function handleMutationError(error: unknown): void {
 
   // Log the error
   logError(apiError, 'error')
-
-  // Show notification for mutation errors (they're usually user-initiated)
-  useAppStore.getState().addNotification({
-    type: 'error',
-    title: 'Operation Failed',
-    message: getUserFriendlyMessage(apiError),
-    actions: apiError.retryable
-      ? [
-          {
-            label: 'Try Again',
-            action: () => {
-              // Retry logic would be handled by the mutation hook
-            }
-          }
-        ]
-      : undefined
-  })
 }
 
 /**
@@ -160,17 +120,7 @@ export function createQueryClient(): QueryClient {
     }),
 
     mutationCache: new MutationCache({
-      onError: handleMutationError,
-      onSuccess: (data, variables, context, mutation) => {
-        // Show success notification for mutations
-        if (mutation.meta?.successMessage) {
-          useAppStore.getState().addNotification({
-            type: 'success',
-            title: 'Success',
-            message: mutation.meta.successMessage as string
-          })
-        }
-      }
+      onError: handleMutationError
     }),
 
     defaultOptions: {

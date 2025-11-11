@@ -14,24 +14,29 @@ PH Tools Desktop is an Electron desktop application providing intelligent tools 
 - **Version Number Updates** Always update the patch portion of the version number after any change
 - **The API is Sacred** The entire extension works via Planhat's bespoke API practices.  DO NOT ASSUME how it works.  Do not change API end points without first asking.  The API service is only edited with permission from the user.  If you do not follow this rule you will screw up the program and be terminated.
 
-**Version**: 4.0.0
 **Stack**: Electron 38 + React 18 + TypeScript 5 + Vite 5 + Zustand + TanStack Query
 
 ## Version Management
 
-**MUST UPDATE after ANY change:**
+**IMPORTANT**: Version numbers are stored ONLY in:
 1. `package.json` - NPM package version and Electron app version
 2. `src/config/version.ts` - Application version display (APP_VERSION constant)
 
+**DO NOT store version numbers in CLAUDE.md** - they become stale and create confusion.
+
+**MUST UPDATE after ANY change:**
+1. `package.json` - Update the "version" field
+2. `src/config/version.ts` - Update APP_VERSION constant and VERSION_INFO object
+
 **Versioning Rules:**
 - Increment PATCH number (3rd component) by 1 after every change
-- Version format: MAJOR.MINOR.PATCH (e.g., 4.0.275)
+- Version format: MAJOR.MINOR.PATCH (e.g., X.Y.Z)
 - PATCH number can increment without limit (no rollover required)
 
 **Development Workflow:**
 ```bash
-# 1. Update version in package.json: "version": "4.0.275"
-# 2. Update version in src/config/version.ts: export const APP_VERSION = '4.0.275'
+# 1. Update version in package.json: "version": "X.Y.Z"
+# 2. Update version in src/config/version.ts: export const APP_VERSION = 'X.Y.Z'
 # 3. Continue development with hot reload
 npm run dev  # Hot reload handles React changes automatically
 ```

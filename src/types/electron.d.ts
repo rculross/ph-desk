@@ -64,6 +64,36 @@ export interface StoredAuthData {
   lastLogin: number;
 }
 
+export interface TenantStorageData {
+  lastProdTenant: string | null;
+  // Note: lastDemoTenant is stored in-memory only (Zustand store), not persisted
+}
+
+export interface ElectronTenant {
+  /**
+   * Get tenant storage data
+   * NOTE: Only production tenant is persisted between sessions
+   * Demo tenants are stored in-memory only (Zustand store)
+   * @returns Promise resolving to tenant storage data with lastProdTenant
+   */
+  getStorage(): Promise<TenantStorageData>;
+
+  /**
+   * Save production tenant storage data
+   * NOTE: Only production tenants are persisted between sessions
+   * Demo tenants are stored in-memory only and cleared on app restart
+   * @param tenantSlug - Production tenant slug to save
+   * @returns Promise that resolves when storage is saved
+   */
+  saveStorage(tenantSlug: string): Promise<void>;
+
+  /**
+   * Clear tenant storage data (clears lastProdTenant)
+   * @returns Promise that resolves when storage is cleared
+   */
+  clearStorage(): Promise<void>;
+}
+
 export interface ElectronAuth {
   /**
    * Open login window and authenticate with Planhat
@@ -183,14 +213,26 @@ export interface ElectronSampleData {
   onGetSampleData(callback: () => void): () => void;
 }
 
+export interface ElectronIpcRenderer {
+  /**
+   * Register a one-time listener for an IPC message
+   * @param channel - IPC channel name
+   * @param listener - Callback function to invoke when message is received
+   * @returns Cleanup function to remove listener
+   */
+  on(channel: string, listener: () => void): () => void;
+}
+
 export interface ElectronAPI {
   platform: string;
   storage: ElectronStorage;
+  tenant: ElectronTenant;
   auth: ElectronAuth;
   files: ElectronFiles;
   window: ElectronWindow;
   planhatBrowser: ElectronPlanhatBrowser;
   sampleData: ElectronSampleData;
+  ipcRenderer: ElectronIpcRenderer;
 }
 
 declare global {

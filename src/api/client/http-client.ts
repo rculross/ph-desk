@@ -2,14 +2,16 @@
  * Simple HTTP Client for Planhat API
  *
  * Direct Axios-based implementation for API interactions
- * Maintains all existing functionality: rate limiting, tenant management, validation
+ * Maintains all existing functionality: rate limiting, tenant management, validation, retry logic
  */
 
-import axios, { AxiosInstance, AxiosRequestConfig } from 'axios'
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosError } from 'axios'
+import axiosRetry from 'axios-retry'
 
 import { logger } from '../../utils/logger'
 import { apiConfig, getBaseURL, getStandardHeaders, getTimeoutConfig } from '../config/index'
 import { axiosRateLimiter as limiter } from '../config/rate-limiter'
+import { createApiError, shouldRetryError, getRetryDelay } from '../errors'
 
 const log = logger.api
 
@@ -51,7 +53,7 @@ export class HttpClient {
    * Create configured Axios instance
    */
   private createAxiosInstance(): AxiosInstance {
-    return axios.create({
+    const instance = axios.create({
       baseURL: this.options.baseURL ?? getBaseURL(),
       timeout: this.options.timeout ?? getTimeoutConfig('default'),
       headers: getStandardHeaders(),
@@ -60,6 +62,75 @@ export class HttpClient {
         serialize: (params) => this.serializeParams(params)
       }
     })
+
+    // Configure automatic retries to match TanStack Query behavior
+    axiosRetry(instance, {
+      retries: 3, // Max retries (will be limited by retryCondition)
+      retryCondition: (error: AxiosError) => {
+        // Convert to ApiError to use centralized retry logic
+        const apiError = createApiError(error)
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+        const retryMeta = (error.config as any)?.['axios-retry']
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+        const currentRetryCount = retryMeta?.retryCount ?? 0
+
+        // Use the same retry logic as TanStack Query
+        const shouldRetry = shouldRetryError(apiError, currentRetryCount)
+
+        if (shouldRetry) {
+          log.debug('HTTP client will retry request', {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            url: error.config?.url,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            method: error.config?.method,
+            errorCode: apiError.code,
+            attempt: currentRetryCount + 1,
+            maxRetries: 3
+          })
+        } else {
+          log.debug('HTTP client will not retry request', {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            url: error.config?.url,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            method: error.config?.method,
+            errorCode: apiError.code,
+            attempt: currentRetryCount + 1,
+            reason: apiError.retryable === false ? 'non-retryable' : 'max retries exceeded'
+          })
+        }
+
+        return shouldRetry
+      },
+      retryDelay: (retryCount: number, error: AxiosError) => {
+        // Use the same exponential backoff as TanStack Query
+        const apiError = createApiError(error)
+        const delay = getRetryDelay(retryCount - 1, apiError)
+
+        log.debug('HTTP client retry delay', {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          url: error.config?.url,
+          retryCount,
+          delay,
+          errorCode: apiError.code
+        })
+
+        return delay
+      },
+      onRetry: (retryCount: number, error: AxiosError, requestConfig: AxiosRequestConfig) => {
+        log.info('HTTP client retrying request', {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+          url: requestConfig.url,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+          method: requestConfig.method,
+          attempt: retryCount,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+          status: error.response?.status,
+          message: error.message
+        })
+      }
+    })
+
+    return instance
   }
 
   /**
@@ -122,11 +193,14 @@ export class HttpClient {
           try {
             const url = new URL(config.url, config.baseURL)
 
-            // Skip tenant slug for tenant discovery endpoints
-            const isTenantEndpoint = url.pathname.includes('/myprofile/tenants') ||
-                                   url.pathname.includes('/tenants')
+            // Skip tenant slug only for these specific endpoints
+            const isTenantEndpoint = url.pathname === '/tenants'
 
-            if (!isTenantEndpoint && !url.searchParams.has('tenantSlug')) {
+            // Check if tenant slug is already in URL params or config params
+            const alreadyHasTenantSlug = url.searchParams.has('tenantSlug') ||
+                                        (config.params && 'tenantSlug' in config.params)
+
+            if (!isTenantEndpoint && !alreadyHasTenantSlug) {
               // Add debug logging to track tenant slug injection
               log.debug(`Injecting tenant slug: ${tenantSlug} for ${config.method?.toUpperCase()} ${url.pathname}`)
               url.searchParams.set('tenantSlug', tenantSlug)
@@ -134,8 +208,12 @@ export class HttpClient {
             }
           } catch (e) {
             // If URL parsing fails, fall back to simple query param addition
+            const isTenantEndpointFallback = config.url === '/tenants'
             const separator = config.url.includes('?') ? '&' : '?'
-            if (!config.url.includes('tenantSlug=')) {
+            const alreadyHasParam = config.url.includes('tenantSlug=') ||
+                                   (config.params && 'tenantSlug' in config.params)
+
+            if (!isTenantEndpointFallback && !alreadyHasParam) {
               log.debug(`Fallback tenant slug injection: ${tenantSlug} for ${config.url}`)
               config.url += `${separator}tenantSlug=${tenantSlug}`
             }
@@ -202,6 +280,13 @@ export class HttpClient {
    */
   public getTenantSlug(): string | undefined {
     return this.options.tenantSlug
+  }
+
+  /**
+   * Get current base URL
+   */
+  public getBaseURL(): string | undefined {
+    return this.options.baseURL ?? this.axiosInstance.defaults.baseURL
   }
 
   /**
@@ -356,6 +441,10 @@ export async function detectApiBaseURL(): Promise<string> {
  * Update client base URL based on current environment
  */
 export async function updateClientForCurrentEnvironment(tenantDomain?: string): Promise<void> {
+  // Get current baseURL for comparison
+  const client = getHttpClient()
+  const currentBaseURL = client.getBaseURL()
+
   let baseURL: string
 
   if (tenantDomain) {
@@ -368,6 +457,16 @@ export async function updateClientForCurrentEnvironment(tenantDomain?: string): 
     }
   } else {
     baseURL = await detectApiBaseURL()
+  }
+
+  // Log if base URL is changing (helps detect domain confusion issues)
+  if (currentBaseURL && currentBaseURL !== baseURL) {
+    log.info(`HTTP client base URL changing: ${currentBaseURL} → ${baseURL}`, {
+      tenantDomain,
+      reason: tenantDomain ? 'tenant domain update' : 'auto-detection'
+    })
+  } else if (!currentBaseURL) {
+    log.debug(`HTTP client base URL initialized: ${baseURL}`, { tenantDomain })
   }
 
   updateHttpClient({ baseURL })

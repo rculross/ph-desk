@@ -9,7 +9,7 @@ import {
   UnlockIcon,
   TrashIcon
 } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { toastService } from '@/services/toast.service'
 
 import { ChatInterface } from '../../components/llm/ChatInterface'
 import { PinEntryModal } from '../../components/llm/PinEntryModal'
@@ -20,6 +20,7 @@ import {
   ToolHeaderDivider
 } from '../../components/ui/ToolHeader'
 import { apiKeyManagerService } from '../../services/api-key-manager.service'
+import { getDefaultPin } from '../../services/default-pin.service'
 import { llmService } from '../../services/llm.service'
 import { pinProtectionService } from '../../services/pin-protection.service'
 import type {
@@ -162,15 +163,6 @@ export const LLMIntegration: React.FC<LLMIntegrationProps> = ({ className }) => 
     }
   }, [isSessionValid])
 
-  // Generate default PIN from current date (MMDDYY)
-  const getDefaultPin = (): string => {
-    const now = new Date()
-    const month = (now.getMonth() + 1).toString().padStart(2, '0')
-    const day = now.getDate().toString().padStart(2, '0')
-    const year = now.getFullYear().toString().slice(-2)
-    return `${month}${day}${year}`
-  }
-
   const checkSessionStatus = () => {
     const isValid = pinProtectionService.isSessionValid()
     setIsSessionValid(isValid)
@@ -281,13 +273,13 @@ export const LLMIntegration: React.FC<LLMIntegrationProps> = ({ className }) => 
 
   const handleSessionExpired = () => {
     setIsSessionValid(false)
-    toast.error('Session expired. Please authenticate to continue.')
+    toastService.error('Session expired. Please authenticate to continue.')
   }
 
   const handleSessionUnlocked = () => {
     setIsSessionValid(true)
     setShowPinModal(false)
-    toast.success('Session unlocked successfully')
+    toastService.success('Session unlocked successfully')
     loadAvailableModels() // Reload models when session is unlocked
   }
 

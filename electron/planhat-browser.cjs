@@ -6,6 +6,7 @@
  */
 
 const { BrowserWindow, session } = require('electron');
+const { setPlanhatBrowserWindow, updateWindowMenu } = require('./menu.cjs');
 
 /**
  * Planhat browser window instance
@@ -51,16 +52,25 @@ async function openPlanhatBrowser() {
     show: false // Don't show until ready
   });
 
+  // Register with menu system
+  setPlanhatBrowserWindow(planhatBrowserWindow);
+
   // Show window when ready to avoid flash
   planhatBrowserWindow.once('ready-to-show', () => {
     console.log('[PlanhatBrowser] Window ready, showing...');
     planhatBrowserWindow.show();
   });
 
+  // Handle window focus to update menu checkmarks
+  planhatBrowserWindow.on('focus', () => {
+    updateWindowMenu();
+  });
+
   // Handle window close
   planhatBrowserWindow.on('closed', () => {
     console.log('[PlanhatBrowser] Window closed');
     planhatBrowserWindow = null;
+    setPlanhatBrowserWindow(null);
   });
 
   // Handle load failures

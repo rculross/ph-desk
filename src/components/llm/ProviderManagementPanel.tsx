@@ -27,7 +27,7 @@ import {
   ActivityIcon,
   ClockIcon
 } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { toastService } from '@/services/toast.service'
 
 import type { LLMProvider, LLMModel, UsageStats } from '../../types/llm'
 import { logger } from '../../utils/logger'
@@ -97,14 +97,14 @@ export const ProviderManagementPanel: React.FC<ProviderManagementPanelProps> = (
       const isValid = await onTestProvider(provider)
 
       if (isValid) {
-        toast.success(`${providers[provider].name} connection successful`)
+        toastService.success(`${providers[provider].name} connection successful`)
       } else {
-        toast.error(`${providers[provider].name} connection failed`)
+        toastService.error(`${providers[provider].name} connection failed`)
       }
 
     } catch (error) {
       log.error('Provider test failed', { provider, error })
-      toast.error(`Test failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toastService.error(`Test failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setTestingProvider(null)
       setLoading(prev => ({ ...prev, [`test_${provider}`]: false }))
@@ -116,10 +116,10 @@ export const ProviderManagementPanel: React.FC<ProviderManagementPanelProps> = (
 
     try {
       await onToggleProvider(provider, enabled)
-      toast.success(`${providers[provider].name} ${enabled ? 'enabled' : 'disabled'}`)
+      toastService.success(`${providers[provider].name} ${enabled ? 'enabled' : 'disabled'}`)
     } catch (error) {
       log.error('Failed to toggle provider', { provider, enabled, error })
-      toast.error(`Failed to ${enabled ? 'enable' : 'disable'} provider`)
+      toastService.error(`Failed to ${enabled ? 'enable' : 'disable'} provider`)
     } finally {
       setLoading(prev => ({ ...prev, [`toggle_${provider}`]: false }))
     }
@@ -146,12 +146,12 @@ export const ProviderManagementPanel: React.FC<ProviderManagementPanelProps> = (
       // We need to pass the PIN to the removal function
       await onRemoveProvider(showRemoveModal, 'verified')
 
-      toast.success(`${providers[showRemoveModal].name} removed successfully`)
+      toastService.success(`${providers[showRemoveModal].name} removed successfully`)
       setShowRemoveModal(null)
 
     } catch (error) {
       log.error('Failed to remove provider', { provider: showRemoveModal, error })
-      toast.error(`Failed to remove provider: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toastService.error(`Failed to remove provider: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setLoading(prev => ({ ...prev, [`remove_${showRemoveModal}`]: false }))
     }

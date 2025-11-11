@@ -146,7 +146,7 @@ export const apiConfig: ApiConfig = {
 
   // Request Timeouts
   timeout: {
-    default: 30000,       // 30 seconds - from http-client.ts
+    default: 60000,       // 60 seconds - increased for large endpoints like widgets
     auth: 15000,          // 15 seconds - shorter for auth requests
     search: 45000,        // 45 seconds - longer for search operations
     export: 120000        // 2 minutes - much longer for export operations

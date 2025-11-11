@@ -12,8 +12,8 @@ import {
   CheckCircleIcon,
   AlertTriangleIcon
 } from 'lucide-react'
-import toast from 'react-hot-toast'
 
+import { toastService } from '@/services/toast.service'
 import { pinProtectionService } from '../../services/pin-protection.service'
 import type { LLMProvider, LLMModel } from '../../types/llm'
 import { logger } from '../../utils/logger'
@@ -94,7 +94,7 @@ export const ApiKeySetupForm: React.FC<ApiKeySetupFormProps> = ({
 
   const handleTestConnection = async () => {
     if (!selectedProvider || !apiKey || !selectedModel) {
-      toast.error('Please fill in all required fields before testing')
+      toastService.error('Please fill in all required fields before testing')
       return
     }
 
@@ -115,14 +115,14 @@ export const ApiKeySetupForm: React.FC<ApiKeySetupFormProps> = ({
           message: 'API key is valid and connection successful!',
           type: 'success'
         })
-        toast.success('API key validated successfully')
+        toastService.success('API key validated successfully')
       } else {
         setValidationStatus({
           isValid: false,
           message: 'API key validation failed. Please check your key and try again.',
           type: 'error'
         })
-        toast.error('API key validation failed')
+        toastService.error('API key validation failed')
       }
 
     } catch (error) {
@@ -133,7 +133,7 @@ export const ApiKeySetupForm: React.FC<ApiKeySetupFormProps> = ({
         message: `Connection test failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         type: 'error'
       })
-      toast.error('Connection test failed')
+      toastService.error('Connection test failed')
     } finally {
       setTesting(false)
     }
@@ -141,7 +141,7 @@ export const ApiKeySetupForm: React.FC<ApiKeySetupFormProps> = ({
 
   const handleFormSubmit = async (values: FormValues) => {
     if (!values.confirmSave) {
-      toast.error('Please confirm that you want to save this API key')
+      toastService.error('Please confirm that you want to save this API key')
       return
     }
 
@@ -178,7 +178,7 @@ export const ApiKeySetupForm: React.FC<ApiKeySetupFormProps> = ({
         pin
       )
 
-      toast.success(`API key saved successfully for ${providers[pendingSave.provider].name}`)
+      toastService.success(`API key saved successfully for ${providers[pendingSave.provider].name}`)
 
       // Reset form
       form.resetFields()
@@ -187,7 +187,7 @@ export const ApiKeySetupForm: React.FC<ApiKeySetupFormProps> = ({
 
     } catch (error) {
       log.error('Failed to save API key', { error })
-      toast.error(`Failed to save API key: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      toastService.error(`Failed to save API key: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setLoading(false)
     }

@@ -43,6 +43,9 @@ export interface TenantState {
   lastTenantsFetch: number | null
   lastUsageFetch: number | null
   lastStatusFetch: number | null
+
+  // In-memory demo tenant tracking (not persisted between sessions)
+  lastDemoTenant: string | null
 }
 
 export interface TenantActions {
@@ -70,6 +73,10 @@ export interface TenantActions {
   // Feature checks
   hasFeature: (feature: string) => boolean
   getTenantFeatures: () => string[]
+
+  // In-memory demo tenant management
+  setLastDemoTenant: (tenantSlug: string | null) => void
+  getLastDemoTenant: () => string | null
 
   // Error handling and UI state
   clearError: () => void
@@ -106,13 +113,16 @@ const initialState: TenantState = {
 
   lastTenantsFetch: null,
   lastUsageFetch: null,
-  lastStatusFetch: null
+  lastStatusFetch: null,
+
+  lastDemoTenant: null
 }
 
 // Cache duration constants
 const TENANTS_CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
 const USAGE_CACHE_DURATION = 15 * 60 * 1000 // 15 minutes
-const STATUS_CACHE_DURATION = 2 * 60 * 1000 // 2 minutes (tenant status changes less frequently)
+// Session-long cache: no time-based expiry, only cleared on explicit refresh or app restart
+const STATUS_CACHE_DURATION = Infinity // No time-based expiry
 
 /**
  * Tenant Store Implementation
@@ -250,25 +260,22 @@ export const useTenantStore = create<TenantStore>()(
 
             const tenant = await tenantService.switchTenant(normalizedSlug)
 
-            // Store the selected tenant in Electron storage for persistence
-            try {
-              await window.electron.storage.set({
-                'last-selected-tenant': normalizedSlug
-              })
-            } catch (storageError) {
-              // Don't fail tenant switch if storage fails
-              logger.api.warn('Failed to store last selected tenant:', storageError instanceof Error ? storageError.message : 'Unknown error')
-            }
+            // Determine environment from tenant domain
+            const environment = tenant.domain?.includes('planhatdemo.com') ? 'demo' : 'production'
 
-            // Save last production tenant to electron-store (main process) if this is a production tenant
-            const isProdTenant = !tenant.domain?.includes('planhatdemo.com')
-            if (isProdTenant) {
-              try {
-                logger.api.info(`Saving last production tenant: ${normalizedSlug}`)
-                await window.electron.auth.saveLastProdTenant(normalizedSlug)
-              } catch (error) {
-                logger.api.warn('Failed to save last production tenant:', error instanceof Error ? error.message : 'Unknown error')
+            // Save tenant to appropriate storage
+            try {
+              if (environment === 'production') {
+                // Production tenants: Save to electron-store (persistent between sessions)
+                await window.electron.tenant.saveStorage(normalizedSlug)
+                logger.api.info(`Saved production tenant to persistent storage: ${normalizedSlug}`)
+              } else {
+                // Demo tenants: Save to Zustand in-memory store (cleared on app restart)
+                get().setLastDemoTenant(normalizedSlug)
+                logger.api.info(`Saved demo tenant to in-memory storage: ${normalizedSlug}`)
               }
+            } catch (error) {
+              logger.api.warn('Failed to save tenant storage:', error instanceof Error ? error.message : 'Unknown error')
             }
 
             // Single set() call to avoid proxy lifecycle issues
@@ -337,7 +344,8 @@ export const useTenantStore = create<TenantStore>()(
               statusError: null
             })
 
-            const statuses = await tenantService.fetchAllTenantsWithStatus()
+            // Only fetch production environment by default
+            const statuses = await tenantService.fetchAllTenantsWithStatus(false)
 
             set({
               tenantStatuses: statuses,
@@ -522,6 +530,17 @@ export const useTenantStore = create<TenantStore>()(
           return state.currentTenant?.features ?? []
         },
 
+        // In-memory demo tenant management
+        setLastDemoTenant: (tenantSlug: string | null) => {
+          logger.api.debug('Setting last demo tenant (in-memory):', tenantSlug)
+          set({ lastDemoTenant: tenantSlug })
+        },
+
+        getLastDemoTenant: (): string | null => {
+          const state = get()
+          return state.lastDemoTenant
+        },
+
         // Error handling and UI state
         clearError: () => {
           logger.api.debug('Tenant store errors cleared')
@@ -601,22 +620,36 @@ export const useTenantStore = create<TenantStore>()(
           }
         })),
         partialize: state => ({
-          // Only persist essential state - DON'T persist tenant statuses
+          // Only persist essential state - DON'T persist tenant statuses or demo tenants
           currentTenant: state.currentTenant,
-          availableTenants: state.availableTenants,
+          // CRITICAL: Only persist production tenants (demo tenants cleared on app restart)
+          availableTenants: state.availableTenants.filter(t =>
+            !t.domain?.includes('planhatdemo.com')
+          ),
           tenantSettings: state.tenantSettings,
           tenantLimits: state.tenantLimits,
           lastTenantsFetch: state.lastTenantsFetch
-          // Intentionally exclude: tenantStatuses, lastStatusFetch
+          // Intentionally exclude: tenantStatuses, lastStatusFetch, demo tenants
         }),
         onRehydrateStorage: () => (state) => {
           if (state) {
             const demoCount = state.availableTenants.filter(t => t.domain?.includes('planhatdemo.com')).length
             const prodCount = state.availableTenants.filter(t => !t.domain?.includes('planhatdemo.com')).length
-            logger.api.info(`Store rehydrated from persistence: ${state.availableTenants.length} tenants (${prodCount} prod, ${demoCount} demo)`)
+            logger.api.info(`Store rehydrated from persistence: ${state.availableTenants.length} tenants (${prodCount} prod, ${demoCount} demo - should be 0)`)
+
+            // CRITICAL: Demo tenants should NEVER be in rehydrated state (filtered by partialize)
             if (demoCount > 0) {
-              const demoTenants = state.availableTenants.filter(t => t.domain?.includes('planhatdemo.com'))
-              logger.api.debug(`Rehydrated demo tenants: ${demoTenants.map(t => t.slug).join(', ')}`)
+              logger.api.warn(`WARNING: ${demoCount} demo tenants found in rehydrated state - this should not happen! Filtering them out now.`)
+              state.availableTenants = state.availableTenants.filter(t => !t.domain?.includes('planhatdemo.com'))
+            }
+
+            // CRITICAL FIX: Clear stale availableTenants if no currentTenant
+            // This prevents useTenantSelector from trying to fetch statuses with stale data
+            if (!state.currentTenant && state.availableTenants.length > 0) {
+              logger.api.info('Clearing stale availableTenants - no current tenant (not properly initialized)')
+              state.availableTenants = []
+              state.lastTenantsFetch = null
+              return
             }
 
             // Log domains to help identify if this is stale data
@@ -674,88 +707,210 @@ export const useTenantStatusActions = () =>
 let isInitializing = false
 let hasInitialized = false
 
-// Initialize store on module load
-const initializeTenantStore = async () => {
-  // Prevent multiple simultaneous initializations
+/**
+ * Reset initialization flags and reinitialize tenant store
+ * Called after successful login to fetch tenants with new auth session
+ */
+export const reinitializeTenantStore = async () => {
+  logger.api.info('=== Reinitializing Tenant Store After Login ===')
+
+  // Reset initialization flags
+  hasInitialized = false
+  isInitializing = false
+
+  // Run initialization with authenticated session
+  await initializeTenantStore()
+}
+
+/**
+ * Initialize tenant store - called by API layer after HTTP client is ready
+ *
+ * SIMPLIFIED FLOW (trusts auth service validation):
+ * 0. Guard: Check if already initialized - return early if true
+ * 1. Guard: Check if authenticated - if not, skip (will init after login)
+ * 2. Get lastTenantSlug from electron-store (via IPC)
+ * 3. If lastTenantSlug exists:
+ *    a. Trust that auth service already validated it
+ *    b. Fetch tenants, switch to last tenant, DONE
+ * 4. If no lastTenantSlug, try 'planhat' fallback:
+ *    a. Fetch tenants, try to switch to 'planhat', DONE
+ * 5. If both failed: Show home screen with tenant dropdown
+ *
+ * NOTE: No redundant validation - auth service already validated tenant access during login
+ */
+export const initializeTenantStore = async () => {
+  // GUARD 1: Prevent duplicate initialization
   if (isInitializing || hasInitialized) {
     logger.api.debug('Tenant store initialization already in progress or completed, skipping')
     return
   }
 
+  // GUARD 2: Check authentication before initializing
+  const { authService } = await import('../services/auth.service')
+  const isAuthenticated = authService.isAuthenticated()
+
+  if (!isAuthenticated) {
+    logger.api.info('=== Tenant Store Initialization Skipped (not authenticated) ===')
+    logger.api.info('Tenant store will initialize after successful login')
+    hasInitialized = true
+    return
+  }
+
   isInitializing = true
+  logger.api.info('=== Tenant Store Initialization Started ===')
 
   try {
-    // Step 1: Try to load last production tenant from electron-store (main process)
-    let lastProdTenantSlug: string | null = null
-    try {
-      const storedAuth = await window.electron.auth.getStoredAuth()
-      lastProdTenantSlug = storedAuth?.tenantSlug ?? null
+    // Helper function to process and store tenant data
+    const processTenants = (tenantsWithStatus: any[]) => {
+      useTenantStore.setState({
+        availableTenants: tenantsWithStatus.map(t => {
+          const normalizedSlug = t.tenantSlug.toLowerCase()
 
-      if (lastProdTenantSlug) {
-        logger.api.info(`Tenant store initialization: Found last production tenant: ${lastProdTenantSlug}`)
-      }
-    } catch (error) {
-      logger.api.debug('No stored auth data found:', error instanceof Error ? error.message : 'Unknown error')
+          // CRITICAL: Use _sourceDomain (actual API domain used) to determine tenant domain
+          // This prevents domain confusion when switching between prod/demo environments
+          // _sourceDomain is set when fetching and represents the actual API endpoint used
+          const sourceDomain = (t as any)._sourceDomain
+          let domain: string
+
+          if (sourceDomain) {
+            // Use actual source domain to construct tenant domain (most reliable)
+            const isDemoSource = sourceDomain.includes('planhatdemo.com')
+            domain = isDemoSource
+              ? `ws.planhatdemo.com/${normalizedSlug}`
+              : `ws.planhat.com/${normalizedSlug}`
+          } else {
+            // Fallback: infer from environment markers (for backwards compatibility)
+            const environment = (t as any).environment || (t as any)._environment || 'production'
+            domain = environment === 'demo'
+              ? `ws.planhatdemo.com/${normalizedSlug}`
+              : `ws.planhat.com/${normalizedSlug}`
+          }
+
+          return {
+            id: t.tenantSlug,
+            slug: normalizedSlug,
+            name: t.name,
+            tenantSlug: normalizedSlug,
+            verified: true,
+            domain,
+            logo: undefined,
+            settings: {} as any,
+            features: [],
+            limits: {} as any,
+            billing: {} as any,
+            isActive: t.isActive,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            subscription: {} as any,
+            members: 0,
+            lastActivity: new Date().toISOString()
+          }
+        }),
+        tenantStatuses: tenantsWithStatus,
+        lastTenantsFetch: Date.now(),
+        lastStatusFetch: Date.now()
+      })
     }
 
-    // Step 2: If we have a last production tenant, validate it using /myprofile
-    if (lastProdTenantSlug) {
+    // Get last production tenant from persistent storage
+    // NOTE: Demo tenants are NOT persisted and require re-authentication each session
+    let tenantStorage: any = null
+    try {
+      tenantStorage = await window.electron.tenant.getStorage()
+      logger.api.info(`Retrieved tenant storage - Prod: ${tenantStorage?.lastProdTenant || 'none'}`)
+    } catch (error) {
+      logger.api.debug('Failed to retrieve tenant storage')
+    }
+
+    // STEP 1: Try last production tenant if available
+    if (tenantStorage?.lastProdTenant) {
+      const lastProdTenant = tenantStorage.lastProdTenant
+      logger.api.info(`Step 1: Using last production tenant (already validated by auth): ${lastProdTenant}`)
+
       try {
-        logger.api.info(`Tenant store initialization: Validating access to ${lastProdTenantSlug}`)
+        // Fetch and check all tenants (production only, no demo)
+        const tenantsWithStatus = await tenantService.fetchAllTenantsWithStatus(false)
 
-        // Use tenantService to validate tenant access
-        const hasAccess = await tenantService.hasAccessToTenant(lastProdTenantSlug)
+        if (tenantsWithStatus.length > 0) {
+          processTenants(tenantsWithStatus)
 
-        if (hasAccess) {
-          logger.api.info(`Tenant store initialization: Verified access to ${lastProdTenantSlug}`)
-
-          // Fetch tenant list to get full tenant object
-          await useTenantStore.getState().fetchAvailableTenants(undefined, true)
-
-          // Switch to the validated tenant
-          const freshState = useTenantStore.getState()
-          const targetTenant = freshState.availableTenants.find(
-            t => t.slug === lastProdTenantSlug || t.tenantSlug === lastProdTenantSlug
+          // Find and switch to the last tenant
+          const targetTenant = useTenantStore.getState().availableTenants.find(
+            t => t.slug === lastProdTenant.toLowerCase()
           )
 
           if (targetTenant) {
             await useTenantStore.getState().switchTenant(targetTenant.slug)
+            logger.api.info(`=== Initialization Complete (last production tenant: ${lastProdTenant}) ===`)
             hasInitialized = true
             return
           } else {
-            logger.api.warn(`Tenant ${lastProdTenantSlug} not found in available tenants list`)
-          }
-        } else {
-          logger.api.warn(`Tenant store initialization: No access to ${lastProdTenantSlug}`)
-          // Clear auth since tenant is no longer accessible
-          if ((window as any).authService) {
-            await (window as any).authService.handleUnauthorized()
+            logger.api.warn(`Step 1: Last tenant '${lastProdTenant}' not found in tenant list, trying fallback`)
           }
         }
       } catch (error) {
-        logger.api.warn(`Failed to validate tenant ${lastProdTenantSlug}:`, error instanceof Error ? error.message : 'Unknown error')
-        // Clear auth on validation error
-        if ((window as any).authService) {
-          await (window as any).authService.handleUnauthorized()
-        }
+        logger.api.warn(`Step 1: Failed to switch to last tenant '${lastProdTenant}', trying fallback:`, error instanceof Error ? error.message : 'Unknown error')
       }
     }
 
-    // Step 3: If we get here, we don't have a valid tenant
-    // User needs to authenticate
-    logger.api.info('Tenant store initialization: No valid tenant found, user needs to login')
+    // STEP 2: Fallback to production default tenant
+    // Note: Demo tenants require explicit authentication, no fallback
+    const environment = authService.getEnvironment()
 
+    if (environment === 'production') {
+      const fallbackTenant = 'planhat'
+      logger.api.info(`Step 2: Trying fallback tenant: ${fallbackTenant} (${environment})`)
+
+      try {
+        // Fetch and check all tenants (production only, no demo)
+        const tenantsWithStatus = await tenantService.fetchAllTenantsWithStatus(false)
+
+        if (tenantsWithStatus.length > 0) {
+          processTenants(tenantsWithStatus)
+
+          // Try to switch to fallback tenant
+          const fallbackTenantData = useTenantStore.getState().availableTenants.find(
+            t => t.slug === fallbackTenant
+          )
+
+          if (fallbackTenantData) {
+            await useTenantStore.getState().switchTenant(fallbackTenant)
+            logger.api.info(`=== Initialization Complete (fallback tenant: ${fallbackTenant}) ===`)
+            hasInitialized = true
+            return
+          } else {
+            logger.api.warn(`Step 2: Fallback tenant '${fallbackTenant}' not found in tenant list`)
+          }
+        }
+      } catch (error) {
+        logger.api.warn(`Step 2: Failed to fetch tenants or switch to ${fallbackTenant}:`, error instanceof Error ? error.message : 'Unknown error')
+      }
+    } else {
+      logger.api.info(`Step 2: Demo environment detected, skipping fallback (demo tenants require explicit authentication)`)
+    }
+
+    // STEP 3: No valid tenant found, clear storage and show home
+    logger.api.info('Step 3: No valid tenant connection, clearing storage')
+
+    try {
+      await window.electron.tenant.clearStorage()
+    } catch (error) {
+      // Ignore storage clear errors
+    }
+
+    logger.api.info('=== Initialization Complete (no tenant connected - showing home) ===')
     hasInitialized = true
+
   } catch (error) {
-    logger.api.error('Failed to initialize tenant store:', error instanceof Error ? error.message : 'Unknown error')
-    hasInitialized = true // Mark as initialized even on error to prevent infinite retries
+    logger.api.error('Tenant store initialization error:', error instanceof Error ? error.message : 'Unknown error')
+    hasInitialized = true
   } finally {
     isInitializing = false
   }
 }
 
-// Auto-initialize when the module loads
-initializeTenantStore()
+// NOTE: Initialization is deferred until after HTTP client is ready
+// See api/index.ts utils.initialize() for initialization sequence
 
 // Subscribe to auth changes to handle tenant context
 if (typeof window !== 'undefined') {

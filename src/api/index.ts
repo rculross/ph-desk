@@ -45,7 +45,8 @@ export {
 } from './client'
 
 // Authentication
-export * from './auth'
+export { authService, type AuthState, type AuthEnvironment } from '../services/auth.service'
+export * from './auth'  // Keep API auth types for compatibility
 
 // Query Management
 export * from './query-client'
@@ -73,7 +74,7 @@ export * from './schemas'
 export * from './utils/pagination'
 
 // Utility functions and helpers
-import { authService } from './auth'
+import { authService } from '../services/auth.service'
 import { initializeHttpClient, getHttpClient } from './client/http-client'
 import { queryClient, queryUtils } from './query-client'
 import { sendValidatedRequest, type ValidatedRequestOptions } from './request'
@@ -125,14 +126,23 @@ export const api = {
      */
     initialize: async () => {
       try {
-        // Initialize HTTP client first
+        // CRITICAL: Initialize HTTP client FIRST (before auth or tenant services)
         initializeHttpClient({
           enableRateLimit: true,
           context: 'extension'
         })
         log.debug('HTTP client initialized successfully')
 
-        // Then check if user is authenticated
+        // Initialize auth service (now that HTTP client is ready)
+        await authService.initialize()
+        log.debug('Auth service initialized successfully')
+
+        // Initialize tenant store (now that auth service is ready)
+        const { initializeTenantStore } = await import('../stores/tenant.store')
+        await initializeTenantStore()
+        log.debug('Tenant store initialized successfully')
+
+        // Check if user is authenticated
         const isAuthenticated = await authService.isAuthenticated()
 
         if (process.env.NODE_ENV === 'development') {

@@ -34,8 +34,8 @@ import { ChevronDown, Check, AlertCircle, Building2, RefreshCw } from 'lucide-re
 import { useTenantSelector } from '../hooks/useTenantSelector'
 import type { TenantOption } from '../hooks/useTenantSelector'
 import { useAuthStore } from '../stores/auth.store'
-import { tenantService } from '../api/services/tenant.service'
 import { logger } from '../utils/logger'
+import { authService } from '../services/auth.service'
 
 export interface TenantSelectorProps {
   /** Additional CSS class name */
@@ -56,30 +56,22 @@ export interface TenantSelectorProps {
 
 /**
  * Status Dot Component - Shows tenant validation status
- * Green: Validated and accessible
- * Red: Validation failed or no access
- * Gray: Not yet validated
+ * Green: Validated and accessible (isActive: true)
+ * Gray: Not validated or no access (isActive: false)
  */
 const StatusDot: React.FC<{
   isActive: boolean
-  isValidated?: boolean
-  validationFailed?: boolean
   size?: 'sm' | 'md'
 }> = ({
   isActive,
-  isValidated = false,
-  validationFailed = false,
   size = 'md'
 }) => {
   const dotSize = size === 'sm' ? 'h-2 w-2' : 'h-2.5 w-2.5'
 
-  // Determine color based on validation state
-  let colorClass = 'bg-gray-400' // Default: not validated
-  if (validationFailed) {
-    colorClass = 'bg-red-500 shadow-sm shadow-red-500/50' // Failed validation
-  } else if (isValidated && isActive) {
-    colorClass = 'bg-green-500 shadow-sm shadow-green-500/50' // Validated and active
-  }
+  // Determine color based on isActive status from store
+  const colorClass = isActive
+    ? 'bg-green-500 shadow-sm shadow-green-500/50' // Validated and has access
+    : 'bg-gray-400' // Not validated or no access
 
   return (
     <div
@@ -158,6 +150,8 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
     switchError,
     switchTenant,
     refreshTenants,
+    refreshProductionTenants,
+    refreshDemoTenants,
     clearErrors,
     isCurrentTenant
   } = useTenantSelector()
@@ -168,66 +162,12 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
   // Component state
   const [isOpen, setIsOpen] = useState(false)
   const [focusedIndex, setFocusedIndex] = useState(0)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const [isValidated, setIsValidated] = useState(false)
-  const [validationFailed, setValidationFailed] = useState(false)
-  const [isValidating, setIsValidating] = useState(false)
+  const [isRefreshingProduction, setIsRefreshingProduction] = useState(false)
+  const [isRefreshingDemo, setIsRefreshingDemo] = useState(false)
 
   // Refs
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const dropdownRef = useRef<HTMLDivElement | null>(null)
-
-  // Validate tenant access when authenticated and tenant changes
-  useEffect(() => {
-    const validateTenant = async () => {
-      // Only validate if authenticated and we have a current tenant
-      if (!isAuthenticated || !currentTenant) {
-        setIsValidated(false)
-        setValidationFailed(false)
-        return
-      }
-
-      // Don't validate during switching or loading
-      if (isSwitching || isLoading || isValidating) {
-        return
-      }
-
-      logger.extension.debug('Validating tenant access via /myprofile', {
-        tenantSlug: currentTenant.slug,
-        environment: currentTenant.environment
-      })
-
-      setIsValidating(true)
-
-      try {
-        // Call /myprofile to validate access
-        const hasAccess = await tenantService.checkTenantStatus(
-          currentTenant.slug,
-          currentTenant.environment
-        )
-
-        setIsValidated(hasAccess)
-        setValidationFailed(!hasAccess)
-
-        logger.extension.info('Tenant validation completed', {
-          tenantSlug: currentTenant.slug,
-          hasAccess,
-          status: hasAccess ? 'valid' : 'invalid'
-        })
-      } catch (error) {
-        logger.extension.error('Tenant validation failed', {
-          tenantSlug: currentTenant.slug,
-          error: error instanceof Error ? error.message : 'Unknown error'
-        })
-        setIsValidated(false)
-        setValidationFailed(true)
-      } finally {
-        setIsValidating(false)
-      }
-    }
-
-    validateTenant()
-  }, [isAuthenticated, currentTenant, isSwitching, isLoading])
 
   // Floating UI setup
   const { refs, floatingStyles } = useFloating({
@@ -238,10 +178,14 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
       flip({ padding: 8 }),
       shift({ padding: 8 }),
       floatingSize({
-        apply({ rects, elements }: any) {
+        apply({ availableHeight, elements }: any) {
+          // Set max height to 75% of window height, or available height, whichever is smaller
+          const windowHeight = window.innerHeight
+          const maxAllowedHeight = windowHeight * 0.75
+          const maxHeight = Math.min(maxAllowedHeight, availableHeight - 16)
+
           Object.assign(elements.floating.style, {
-            minWidth: `${Math.max(rects.reference.width, 240)}px`,
-            maxWidth: '320px'
+            maxHeight: `${maxHeight}px`
           })
         }
       })
@@ -263,7 +207,7 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
       logger.extension.debug('Tenant already selected, ignoring selection', { tenantSlug: tenant.slug })
       return
     }
-    
+
     if (isSwitching) {
       logger.extension.warn('Tenant switch already in progress, ignoring selection', { tenantSlug: tenant.slug })
       return
@@ -276,10 +220,27 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
     })
 
     try {
+      // If tenant is inactive, trigger authentication first
+      if (!tenant.isActive) {
+        logger.extension.info('Inactive tenant selected, triggering authentication', { tenantSlug: tenant.slug, environment: tenant.environment })
+
+        try {
+          await authService.login(tenant.environment)
+          logger.extension.info('Authentication completed for inactive tenant', { tenantSlug: tenant.slug, environment: tenant.environment })
+        } catch (authError) {
+          logger.extension.error('Authentication failed for inactive tenant', {
+            tenantSlug: tenant.slug,
+            error: authError instanceof Error ? authError.message : 'Unknown error'
+          })
+          throw authError
+        }
+      }
+
+      // Proceed with tenant switch
       await switchTenant(tenant.slug)
       onTenantChange?.(tenant)
       setIsOpen(false)
-      
+
       logger.extension.info('Tenant switch completed successfully', { tenantSlug: tenant.slug })
     } catch (error) {
       // Error handling is managed by the hook/store
@@ -290,24 +251,42 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
     }
   }, [currentTenant, isSwitching, switchTenant, onTenantChange])
 
-  // Handle refresh
-  const handleRefresh = useCallback(async (e: React.MouseEvent) => {
+  // Handle refresh for specific environment
+  const handleRefreshProduction = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation()
-    
-    logger.extension.info('Tenant refresh initiated by user')
-    setIsRefreshing(true)
-    
+
+    logger.extension.info('Production tenant refresh initiated by user')
+    setIsRefreshingProduction(true)
+
     try {
-      await refreshTenants()
-      logger.extension.info('Tenant refresh completed successfully')
+      await refreshProductionTenants()
+      logger.extension.info('Production tenant refresh completed successfully')
     } catch (error) {
-      logger.extension.error('Tenant refresh failed', {
+      logger.extension.error('Production tenant refresh failed', {
         error: error instanceof Error ? error.message : 'Unknown error'
       })
     } finally {
-      setIsRefreshing(false)
+      setIsRefreshingProduction(false)
     }
-  }, [refreshTenants])
+  }, [refreshProductionTenants])
+
+  const handleRefreshDemo = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation()
+
+    logger.extension.info('Demo tenant refresh initiated by user')
+    setIsRefreshingDemo(true)
+
+    try {
+      await refreshDemoTenants()
+      logger.extension.info('Demo tenant refresh completed successfully')
+    } catch (error) {
+      logger.extension.error('Demo tenant refresh failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+    } finally {
+      setIsRefreshingDemo(false)
+    }
+  }, [refreshDemoTenants])
 
   // Keyboard navigation
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -435,17 +414,33 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
       )
     }
 
-    // Don't show tenant name until authenticated
-    if (!isAuthenticated) {
+    // If we have a current tenant, show it
+    if (currentTenant) {
       return (
         <>
-          <StatusDot isActive={false} size="sm" />
-          <span className="text-muted-foreground">Not logged in</span>
+          {showLogo && <TenantAvatar tenant={currentTenant} size="sm" />}
+          <StatusDot
+            isActive={currentTenant.isActive}
+            size="sm"
+          />
+          <span className="truncate font-medium">
+            {currentTenant.slug}
+          </span>
+          {showPlan && currentTenant.subscription && (
+            <span className="text-xs text-muted-foreground px-1.5 py-0.5 bg-muted rounded">
+              {currentTenant.subscription.plan}
+            </span>
+          )}
         </>
       )
     }
 
-    if (!currentTenant) {
+    // Check if there are any active tenants available
+    const hasActiveTenants = availableTenants.some(tenant => tenant.isActive)
+
+    // If there are active tenants, show "Select tenant" (user is authenticated to those tenants)
+    // Otherwise show "Not logged in"
+    if (hasActiveTenants) {
       return (
         <>
           <StatusDot isActive={false} size="sm" />
@@ -454,30 +449,10 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
       )
     }
 
-    // Determine text color based on validation state
-    const textColorClass = validationFailed
-      ? 'text-red-600'
-      : isValidated
-      ? 'text-green-600'
-      : ''
-
     return (
       <>
-        {showLogo && <TenantAvatar tenant={currentTenant} size="sm" />}
-        <StatusDot
-          isActive={currentTenant.isActive}
-          isValidated={isValidated}
-          validationFailed={validationFailed}
-          size="sm"
-        />
-        <span className={clsx('truncate font-medium', textColorClass)}>
-          {currentTenant.slug}
-        </span>
-        {showPlan && currentTenant.subscription && (
-          <span className="text-xs text-muted-foreground px-1.5 py-0.5 bg-muted rounded">
-            {currentTenant.subscription.plan}
-          </span>
-        )}
+        <StatusDot isActive={false} size="sm" />
+        <span className="text-muted-foreground">Not logged in</span>
       </>
     )
   }
@@ -517,8 +492,6 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
         {showLogo && <TenantAvatar tenant={tenant} size="sm" />}
         <StatusDot
           isActive={tenant.isActive}
-          isValidated={isCurrent && isValidated}
-          validationFailed={isCurrent && validationFailed}
           size="sm"
         />
 
@@ -539,17 +512,49 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
     )
   }
 
-  // Render environment group
-  const renderEnvironmentGroup = (title: string, tenants: TenantOption[], startIndex: number) => {
-    if (tenants.length === 0) return null
-
+  // Render environment group with refresh button
+  const renderEnvironmentGroup = (
+    title: string,
+    tenants: TenantOption[],
+    startIndex: number,
+    onRefresh: (e: React.MouseEvent) => void,
+    isRefreshing: boolean
+  ) => {
     return (
       <div key={title}>
-        <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 border-b">
-          {title}
+        <div
+          className="pl-3 pr-2 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 border-b flex items-center justify-between gap-2"
+          onMouseEnter={() => setFocusedIndex(-1)}
+        >
+          <span className="flex-1">{title}</span>
+          <button
+            onClick={onRefresh}
+            className={clsx(
+              'p-1 hover:bg-accent/50 rounded transition-colors flex-shrink-0',
+              isRefreshing && 'opacity-50 cursor-not-allowed'
+            )}
+            title={`Refresh ${title.toLowerCase()} tenants`}
+            aria-label={`Refresh ${title.toLowerCase()} tenants`}
+            disabled={isRefreshing}
+            type="button"
+          >
+            <RefreshCw className={clsx(
+              'h-3 w-3 transition-transform duration-200',
+              isRefreshing && 'animate-spin'
+            )} />
+          </button>
         </div>
-        {tenants.map((tenant, index) =>
-          renderTenantOption(tenant, startIndex + index)
+        {tenants.length === 0 ? (
+          <div
+            className="px-3 py-4 text-center text-sm text-muted-foreground"
+            onMouseEnter={() => setFocusedIndex(-1)}
+          >
+            No tenants available
+          </div>
+        ) : (
+          tenants.map((tenant, index) =>
+            renderTenantOption(tenant, startIndex + index)
+          )
         )}
       </div>
     )
@@ -564,6 +569,7 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
           refs.setReference(node)
         }}
         type="button"
+        style={{ width: '175px' }}
         className={clsx(
           'inline-flex items-center justify-between rounded-lg border bg-background',
           'hover:bg-accent hover:text-accent-foreground',
@@ -575,18 +581,19 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
           className
         )}
         onClick={() => {
-          if (!disabled && isAuthenticated) {
+          if (!disabled) {
             logger.extension.info('Tenant selector dropdown toggled', {
               wasOpen: isOpen,
               willOpen: !isOpen,
               currentTenant: currentTenant?.slug,
-              availableCount: availableTenants.length
+              availableCount: availableTenants.length,
+              isAuthenticated
             })
             setIsOpen(!isOpen)
           }
         }}
         onKeyDown={handleKeyDown}
-        disabled={disabled || isSwitching || !isAuthenticated}
+        disabled={disabled || isSwitching}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-label="Select tenant"
@@ -596,39 +603,6 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
         </div>
 
         <div className="flex items-center gap-1 flex-shrink-0 ml-2">
-          {availableTenants.length > 0 && (
-            <div
-              onClick={(e) => {
-                e.stopPropagation()
-                if (!isRefreshing && !disabled) {
-                  handleRefresh(e as any)
-                }
-              }}
-              className={clsx(
-                'p-1 hover:bg-accent/50 rounded transition-colors cursor-pointer',
-                (isRefreshing || disabled) && 'opacity-50 cursor-not-allowed'
-              )}
-              title="Refresh tenants"
-              aria-label="Refresh tenants"
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  if (!isRefreshing && !disabled) {
-                    handleRefresh(e as any)
-                  }
-                }
-              }}
-            >
-              <RefreshCw className={clsx(
-                'h-3 w-3 transition-transform duration-200',
-                isRefreshing && 'animate-spin'
-              )} />
-            </div>
-          )}
-
           {isSwitching ? (
             <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
           ) : (
@@ -658,7 +632,10 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
               dropdownRef.current = node
               refs.setFloating(node)
             }}
-            style={floatingStyles}
+            style={{
+              ...floatingStyles,
+              width: refs.reference.current ? `${refs.reference.current.getBoundingClientRect().width}px` : '280px'
+            }}
             initial={{ opacity: 0, scale: 0.95, y: -10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: -10 }}
@@ -674,11 +651,21 @@ export const TenantSelector: React.FC<TenantSelectorProps> = ({
                 </div>
               ) : (
                 <>
-                  {renderEnvironmentGroup('Production', groupedTenants.production, 0)}
-                  {groupedTenants.production.length > 0 && groupedTenants.demo.length > 0 && (
-                    <div className="border-t my-1" />
+                  {renderEnvironmentGroup(
+                    'Production',
+                    groupedTenants.production,
+                    0,
+                    handleRefreshProduction,
+                    isRefreshingProduction
                   )}
-                  {renderEnvironmentGroup('Demo', groupedTenants.demo, groupedTenants.production.length)}
+                  <div className="border-t my-1" />
+                  {renderEnvironmentGroup(
+                    'Demo',
+                    groupedTenants.demo,
+                    groupedTenants.production.length,
+                    handleRefreshDemo,
+                    isRefreshingDemo
+                  )}
                 </>
               )}
             </div>

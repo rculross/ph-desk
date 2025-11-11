@@ -32,7 +32,7 @@ import {
 } from '../schemas'
 import { fetchAllRecords, fetchAllIssuesWithDateFilter } from '../utils/pagination'
 
-import { ensureTenantSlug as ensureSharedTenantSlug } from './tenant.service'
+import { ensureAuthAndTenant } from './tenant.service'
 
 const log = logger.api
 
@@ -116,10 +116,11 @@ class IssuesService {
   }
 
   /**
-   * Ensure tenant slug is set before making API calls
+   * Ensure authentication and tenant slug are set before making API calls
+   * This provides consistent behavior with TanStack Query hooks
    */
-  private async ensureTenantSlug(): Promise<void> {
-    await ensureSharedTenantSlug({ context: 'API calls', logger: log })
+  private async ensureAuthAndTenantContext(): Promise<void> {
+    await ensureAuthAndTenant({ context: 'issues API calls', logger: log })
   }
 
   /**
@@ -130,8 +131,8 @@ class IssuesService {
     pagination?: { limit?: number; offset?: number; sort?: string },
     options?: ApiRequestOptions
   ): Promise<PaginatedResponse<Issue>> {
-    // Ensure tenant slug is set before making API calls
-    await this.ensureTenantSlug()
+    // Ensure authentication and tenant context before making API calls
+    await this.ensureAuthAndTenantContext()
 
     // Build query params safely - exclude date filters which need client-side handling
     const queryParams: Record<string, any> = {
@@ -191,8 +192,8 @@ class IssuesService {
       throw new Error('Invalid issue ID format')
     }
 
-    // Ensure tenant slug is set before making API calls
-    await this.ensureTenantSlug()
+    // Ensure authentication and tenant context before making API calls
+    await this.ensureAuthAndTenantContext()
 
     try {
       const response = await this.httpClient.get<{ data: Issue }>(
@@ -217,8 +218,8 @@ class IssuesService {
    * Create a new issue
    */
   async createIssue(issueData: CreateIssueRequest, options?: ApiRequestOptions): Promise<Issue> {
-    // Ensure tenant slug is set before making API calls
-    await this.ensureTenantSlug()
+    // Ensure authentication and tenant context before making API calls
+    await this.ensureAuthAndTenantContext()
 
     try {
       const response = await this.httpClient.post<{ data: Issue }>(
@@ -254,7 +255,7 @@ class IssuesService {
       }
 
       // Ensure tenant slug is set before making API calls
-      await this.ensureTenantSlug()
+      await this.ensureAuthAndTenantContext()
 
       const response = await this.httpClient.patch<{ data: Issue }>(
         `/issues/${issueId}`,
@@ -289,7 +290,7 @@ class IssuesService {
       }
 
       // Ensure tenant slug is set before making API calls
-      await this.ensureTenantSlug()
+      await this.ensureAuthAndTenantContext()
 
       await this.httpClient.delete<void>(
         `/issues/${issueId}`,
@@ -312,7 +313,7 @@ class IssuesService {
   async bulkUpdateIssues(request: BulkUpdateRequest, options?: ApiRequestOptions): Promise<Issue[]> {
     try {
       // Ensure tenant slug is set before making API calls
-      await this.ensureTenantSlug()
+      await this.ensureAuthAndTenantContext()
 
       const response = await this.httpClient.patch<ApiResponse<Issue[]>>(
         '/issues/bulk',
@@ -338,7 +339,7 @@ class IssuesService {
   async bulkDeleteIssues(issueIds: string[], options?: ApiRequestOptions): Promise<void> {
     try {
       // Ensure tenant slug is set before making API calls
-      await this.ensureTenantSlug()
+      await this.ensureAuthAndTenantContext()
 
       await this.httpClient.post<void>(
         '/issues/bulk-delete',
@@ -362,7 +363,7 @@ class IssuesService {
   async searchIssues(request: IssueSearchRequest, options?: ApiRequestOptions): Promise<PaginatedResponse<Issue>> {
     try {
       // Ensure tenant slug is set before making API calls
-      await this.ensureTenantSlug()
+      await this.ensureAuthAndTenantContext()
 
       const response = await this.httpClient.post<ApiResponse<PaginatedResponse<Issue>>>(
         '/issues/search',
@@ -396,7 +397,7 @@ class IssuesService {
   async getIssueStats(filters?: IssueFilters, options?: ApiRequestOptions): Promise<IssueStats> {
     try {
       // Ensure tenant slug is set before making API calls
-      await this.ensureTenantSlug()
+      await this.ensureAuthAndTenantContext()
 
       const queryParams = new URLSearchParams()
 
@@ -455,7 +456,7 @@ class IssuesService {
   ): Promise<PaginatedResponse<IssueActivity>> {
     try {
       // Ensure tenant slug is set before making API calls
-      await this.ensureTenantSlug()
+      await this.ensureAuthAndTenantContext()
 
       const queryParams = new URLSearchParams()
       if (pagination?.limit) queryParams.append('limit', pagination.limit.toString())
@@ -501,7 +502,7 @@ class IssuesService {
   ): Promise<Comment> {
     try {
       // Ensure tenant slug is set before making API calls
-      await this.ensureTenantSlug()
+      await this.ensureAuthAndTenantContext()
 
       const response = await this.httpClient.post<ApiResponse<Comment>>(
         `/issues/${issueId}/comments`,
@@ -697,7 +698,7 @@ class IssuesService {
   ): Promise<string> {
     try {
       // Ensure tenant slug is set before making API calls
-      await this.ensureTenantSlug()
+      await this.ensureAuthAndTenantContext()
 
       const response = await this.httpClient.post<{ downloadUrl: string }>(
         '/issues/export',

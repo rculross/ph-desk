@@ -58,6 +58,32 @@ contextBridge.exposeInMainWorld('electron', {
     logout: () => ipcRenderer.invoke('auth:logout')
   },
 
+  // Tenant Storage APIs
+  tenant: {
+    /**
+     * Get tenant storage data
+     * NOTE: Only production tenant is persisted between sessions
+     * Demo tenants are stored in-memory only (Zustand store)
+     * @returns {Promise<{lastProdTenant: string|null}>}
+     */
+    getStorage: () => ipcRenderer.invoke('tenant:get-storage'),
+
+    /**
+     * Save production tenant storage data
+     * NOTE: Only production tenants are persisted between sessions
+     * Demo tenants are stored in-memory only and cleared on app restart
+     * @param {string} tenantSlug - Production tenant slug to save
+     * @returns {Promise<void>}
+     */
+    saveStorage: (tenantSlug) => ipcRenderer.invoke('tenant:save-storage', tenantSlug),
+
+    /**
+     * Clear tenant storage data (clears lastProdTenant)
+     * @returns {Promise<void>}
+     */
+    clearStorage: () => ipcRenderer.invoke('tenant:clear-storage')
+  },
+
   // Storage APIs - implemented in Phase 2
   storage: {
     /**
@@ -166,6 +192,21 @@ contextBridge.exposeInMainWorld('electron', {
       const handler = () => callback();
       ipcRenderer.on('menu:get-sample-data', handler);
       return () => ipcRenderer.removeListener('menu:get-sample-data', handler);
+    }
+  },
+
+  // IPC Renderer - for general message passing
+  ipcRenderer: {
+    /**
+     * Register a listener for an IPC message
+     * @param {string} channel - IPC channel name
+     * @param {Function} listener - Callback function to invoke when message is received
+     * @returns {Function} Cleanup function to remove listener
+     */
+    on: (channel, listener) => {
+      const handler = () => listener();
+      ipcRenderer.on(channel, handler);
+      return () => ipcRenderer.removeListener(channel, handler);
     }
   }
 });

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage, subscribeWithSelector } from 'zustand/middleware'
 
-import type { Notification, NotificationAction, UserSettings, ThemeConfig } from '../types'
+import type { UserSettings, ThemeConfig } from '../types'
 import { logger } from '../utils/logger'
 import { storageManager } from '../utils/storage-manager'
 
@@ -17,10 +17,6 @@ export interface AppState {
   theme: 'light' | 'dark' | 'system'
   sidebarCollapsed: boolean
   sidebarWidth: number
-
-  // Notifications
-  notifications: Notification[]
-  unreadNotifications: number
 
   // User settings and preferences
   settings: UserSettings
@@ -64,13 +60,6 @@ export interface AppActions {
   setSidebarCollapsed: (collapsed: boolean) => void
   toggleSidebar: () => void
   setSidebarWidth: (width: number) => void
-
-  // Notification management
-  addNotification: (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => void
-  removeNotification: (id: string) => void
-  markNotificationRead: (id: string) => void
-  markAllNotificationsRead: () => void
-  clearNotifications: () => void
 
   // Settings management
   updateSettings: (updates: Partial<UserSettings>) => void
@@ -128,9 +117,6 @@ const initialState: AppState = {
   theme: 'system',
   sidebarCollapsed: false,
   sidebarWidth: 280,
-
-  notifications: [],
-  unreadNotifications: 0,
 
   settings: defaultSettings,
 
@@ -218,99 +204,6 @@ export const useAppStore = create<AppStore>()(
 
         setSidebarWidth: (width: number) => {
           set({ sidebarWidth: Math.max(200, Math.min(400, width)) })
-        },
-
-        // Notification management
-        addNotification: (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
-          const id = generateId()
-          const timestamp = Date.now()
-
-          logger.extension.info('Notification added', {
-            type: notification.type,
-            title: notification.title,
-            id
-          })
-
-          set(state => {
-            const newNotification = {
-              ...notification,
-              id,
-              timestamp,
-              read: false
-            }
-            
-            const newNotifications = [newNotification, ...state.notifications]
-            
-            return {
-              notifications: newNotifications.length > 50 ? newNotifications.slice(0, 50) : newNotifications,
-              unreadNotifications: state.unreadNotifications + 1
-            }
-          })
-
-          // Show browser notification if enabled
-          const settings = get().settings
-          if (settings.notifications.desktop && 'Notification' in window) {
-            if (Notification.permission === 'granted') {
-              new Notification(notification.title, {
-                body: notification.message,
-                icon: '/assets/icons/icon48.png'
-              })
-            } else if (Notification.permission === 'default') {
-              Notification.requestPermission()
-            }
-          }
-        },
-
-        removeNotification: (id: string) => {
-          set(state => {
-            const notificationIndex = state.notifications.findIndex(n => n.id === id)
-            if (notificationIndex >= 0) {
-              const notification = state.notifications[notificationIndex]
-              const wasUnread = !notification?.read
-              
-              logger.extension.debug('Notification removed', { id, wasUnread })
-              
-              return {
-                notifications: state.notifications.filter(n => n.id !== id),
-                unreadNotifications: wasUnread 
-                  ? Math.max(0, state.unreadNotifications - 1)
-                  : state.unreadNotifications
-              }
-            }
-            return {}
-          })
-        },
-
-        markNotificationRead: (id: string) => {
-          set(state => {
-            const notification = state.notifications.find(n => n.id === id)
-            if (notification && !notification.read) {
-              return {
-                notifications: state.notifications.map(n => 
-                  n.id === id ? { ...n, read: true } : n
-                ),
-                unreadNotifications: Math.max(0, state.unreadNotifications - 1)
-              }
-            }
-            return {}
-          })
-        },
-
-        markAllNotificationsRead: () => {
-          const unreadCount = get().unreadNotifications
-          logger.extension.info('All notifications marked as read', { previousUnreadCount: unreadCount })
-          
-          set(state => ({
-            notifications: state.notifications.map(notification => ({ ...notification, read: true })),
-            unreadNotifications: 0
-          }))
-        },
-
-        clearNotifications: () => {
-          set({ 
-            notifications: [],
-            unreadNotifications: 0
-          })
         },
 
         // Settings management
@@ -585,18 +478,12 @@ export const useAppStore = create<AppStore>()(
           sidebarCollapsed: state.sidebarCollapsed,
           sidebarWidth: state.sidebarWidth,
           settings: state.settings,
-          featureFlags: state.featureFlags,
-          notifications: state.notifications.slice(0, 10) // Only persist recent notifications
+          featureFlags: state.featureFlags
         })
       }
     )
   )
 )
-
-// Utility function to generate unique IDs
-function generateId(): string {
-  return `${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
-}
 
 // Utility function to update theme classes
 function updateThemeClasses(theme: 'light' | 'dark' | 'system') {
@@ -628,17 +515,6 @@ export const useSidebar = () =>
     setCollapsed: state.setSidebarCollapsed,
     toggle: state.toggleSidebar,
     setWidth: state.setSidebarWidth
-  }))
-
-export const useNotifications = () =>
-  useAppStore(state => ({
-    notifications: state.notifications,
-    unread: state.unreadNotifications,
-    add: state.addNotification,
-    remove: state.removeNotification,
-    markRead: state.markNotificationRead,
-    markAllRead: state.markAllNotificationsRead,
-    clear: state.clearNotifications
   }))
 
 export const useSettings = () =>

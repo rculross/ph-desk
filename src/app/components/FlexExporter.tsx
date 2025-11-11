@@ -16,8 +16,8 @@ import {
   DatabaseIcon,
   AlertCircleIcon
 } from 'lucide-react'
-import { toast } from 'react-hot-toast'
 
+import { toastService } from '@/services/toast.service'
 import { getHttpClient, getTenantSlug } from '../../api/client/http-client'
 import { sendRawRequest } from '../../api/request'
 import { fetchAllPages } from '../../api/utils/pagination'
@@ -72,7 +72,7 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
   // Handle clearing history
   const handleClearHistory = useCallback(async () => {
     await clearHistory()
-    toast.success('Endpoint history cleared')
+    toastService.success('Endpoint history cleared')
   }, [clearHistory])
 
   // Create history dropdown menu items
@@ -179,7 +179,7 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
   const handleExecute = useCallback(async () => {
     const requestMode = isMinimal ? 'GET' : mode
     if (!endpoint.trim()) {
-      toast.error('Please enter an endpoint')
+      toastService.error('Please enter an endpoint')
       return
     }
 
@@ -320,7 +320,7 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
         ? `${requestMode} request successful - fetched ${recordCount} records in ${Math.ceil(recordCount / 2000)} chunks`
         : `${requestMode} request successful`
 
-      toast.success(successMessage)
+      toastService.success(successMessage)
 
       log.info('Flex export request completed successfully', {
         endpoint: endpoint.trim(),
@@ -334,7 +334,7 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
       const errorMessage = error instanceof Error ? error.message : 'Request failed'
       setError(errorMessage)
 
-      toast.error(errorMessage)
+      toastService.error(errorMessage)
 
       log.error('Flex export request failed', {
         endpoint: endpoint.trim(),
@@ -354,7 +354,7 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
       return
     }
     if (!responseData) {
-      toast.error('No data to export')
+      toastService.error('No data to export')
       return
     }
 
@@ -405,7 +405,7 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
         const jsonString = note + JSON.stringify(exportData, null, 2)
         blob = new Blob([jsonString], { type: 'application/json' })
         fullFilename = `${filename}.json`
-        toast.success('Excel export not available - exported as JSON instead')
+        toastService.success('Excel export not available - exported as JSON instead')
       }
 
       // Create download link
@@ -422,7 +422,7 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
       // Clean up
       setTimeout(() => URL.revokeObjectURL(url), 1000)
 
-      toast.success('Export completed')
+      toastService.success('Export completed')
 
       log.info('Flex export completed', {
         endpoint,
@@ -432,7 +432,7 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Export failed'
-      toast.error(errorMessage)
+      toastService.error(errorMessage)
 
       log.error('Flex export failed', {
         endpoint,
