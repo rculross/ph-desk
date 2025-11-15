@@ -57,6 +57,7 @@ export * from './queries'
 // Business Logic Services
 export { companiesService } from './services/companies.service'
 export { issuesService } from './services/issues.service'
+export { permissionsService } from './services/permissions.service'
 export { tenantService, TenantService, ensureTenantSlug } from './services/tenant.service'
 export { salesforceIntegrationService } from './services/salesforce-integration.service'
 

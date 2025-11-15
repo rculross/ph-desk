@@ -43,6 +43,8 @@ export interface TenantState {
   lastTenantsFetch: number | null
   lastUsageFetch: number | null
   lastStatusFetch: number | null
+  lastDemoFetch: number | null
+  lastDemoStatusFetch: number | null
 
   // In-memory demo tenant tracking (not persisted between sessions)
   lastDemoTenant: string | null
@@ -56,7 +58,7 @@ export interface TenantActions {
   clearCurrentTenant: () => Promise<void>
 
   // Tenant status checking
-  fetchAllTenantStatuses: () => Promise<void>
+  fetchAllTenantStatuses: (environment?: 'production' | 'demo' | 'all') => Promise<void>
   getTenantStatus: (tenantSlug: string) => TenantStatus | null
   getActiveTenants: () => TenantStatus[]
   getInactiveTenants: () => TenantStatus[]
@@ -87,6 +89,7 @@ export interface TenantActions {
   // Cache management
   refreshTenantData: () => Promise<void>
   invalidateCache: () => void
+  loadDemoTenants: (forceRefresh?: boolean) => Promise<void>
 }
 
 export type TenantStore = TenantState & TenantActions
@@ -114,6 +117,8 @@ const initialState: TenantState = {
   lastTenantsFetch: null,
   lastUsageFetch: null,
   lastStatusFetch: null,
+  lastDemoFetch: null,
+  lastDemoStatusFetch: null,
 
   lastDemoTenant: null
 }
@@ -151,40 +156,29 @@ export const useTenantStore = create<TenantStore>()(
           // Check cache freshness (skip if force refresh requested)
           if (!forceRefresh && lastFetch && now - lastFetch < TENANTS_CACHE_DURATION) {
             const currentTenants = get().availableTenants
-            const demoCount = currentTenants.filter(t => t.domain?.includes('planhatdemo.com')).length
-            const prodCount = currentTenants.filter(t => !t.domain?.includes('planhatdemo.com')).length
-            logger.api.info(`Using cached tenant data: ${currentTenants.length} tenants (${prodCount} prod, ${demoCount} demo)`)
+            const prodCount = currentTenants.filter(t => t.environment !== 'demo').length
+            logger.api.info(`Using cached production tenant data: ${prodCount} tenants`)
             return
           }
 
           try {
-            logger.api.debug('Fetching available tenants...')
+            logger.api.debug('Fetching available production tenants...')
             set({
               tenantsLoading: true,
               tenantsError: null
             })
 
-            const tenants = await tenantService.getTenants(filters)
-            logger.api.debug(`Fetched tenants: ${tenants.length} found`)
-
-            // Debug: Log tenant environments before storing
-            const demoCount = tenants.filter(t => t.domain?.includes('planhatdemo.com')).length
-            const prodCount = tenants.filter(t => !t.domain?.includes('planhatdemo.com')).length
-            logger.api.info(`Store: About to store ${tenants.length} tenants (${prodCount} prod, ${demoCount} demo)`)
-
-            if (demoCount > 0) {
-              const demoTenants = tenants.filter(t => t.domain?.includes('planhatdemo.com'))
-              logger.api.debug(`Store: Demo tenants being stored: ${demoTenants.map(t => t.slug).join(', ')}`)
-            }
-
-            // Log before setting to help debug persistence issues
-            logger.api.debug(`Store: Setting availableTenants with ${tenants.length} tenants in state`)
+            const tenants = await tenantService.getTenants(filters, 'production')
+            logger.api.debug(`Fetched production tenants: ${tenants.length} found`)
 
             // Set state with fresh tenant data (always trust API response)
             set((prevState) => {
-              logger.api.info(`Store: Updating availableTenants: ${prevState.availableTenants.length} → ${tenants.length} tenants`)
+              const existingDemoTenants = prevState.availableTenants.filter(t => t.environment === 'demo')
+              logger.api.info(
+                `Store: Updating production tenants: ${prevState.availableTenants.filter(t => t.environment !== 'demo').length} → ${tenants.length}`
+              )
               return {
-                availableTenants: tenants,
+                availableTenants: [...tenants, ...existingDemoTenants],
                 tenantsLoading: false,
                 lastTenantsFetch: now
               }
@@ -193,9 +187,9 @@ export const useTenantStore = create<TenantStore>()(
             // Log final state for verification
             setTimeout(() => {
               const newState = get()
-              const newDemoCount = newState.availableTenants.filter(t => t.domain?.includes('planhatdemo.com')).length
-              const newProdCount = newState.availableTenants.filter(t => !t.domain?.includes('planhatdemo.com')).length
-              logger.api.info(`Store: Post-update verification: ${newState.availableTenants.length} tenants (${newProdCount} prod, ${newDemoCount} demo)`)
+              const newDemoCount = newState.availableTenants.filter(t => t.environment === 'demo').length
+              const newProdCount = newState.availableTenants.filter(t => t.environment !== 'demo').length
+              logger.api.info(`Store: Post-update verification: ${newProdCount} prod tenants, ${newDemoCount} demo tenants`)
             }, 100)
 
           } catch (error) {
@@ -208,6 +202,49 @@ export const useTenantStore = create<TenantStore>()(
             })
             
             // Re-throw the error so callers can handle it
+            throw error
+          }
+        },
+
+        loadDemoTenants: async (forceRefresh = false) => {
+          const now = Date.now()
+          const lastFetch = get().lastDemoFetch
+
+          if (!forceRefresh && lastFetch && now - lastFetch < TENANTS_CACHE_DURATION) {
+            logger.api.info('Using cached demo tenants')
+            return
+          }
+
+          try {
+            logger.api.debug('Fetching demo tenants...')
+            set({ tenantsLoading: true, tenantsError: null })
+
+            const tenants = await tenantService.getTenants(undefined, 'demo')
+            logger.api.debug(`Fetched demo tenants: ${tenants.length} found`)
+
+            set((prevState) => {
+              const prodTenants = prevState.availableTenants.filter(t => t.environment !== 'demo')
+              return {
+                availableTenants: [...prodTenants, ...tenants],
+                tenantsLoading: false,
+                lastDemoFetch: now
+              }
+            })
+
+            setTimeout(() => {
+              const newState = get()
+              const newDemoCount = newState.availableTenants.filter(t => t.environment === 'demo').length
+              logger.api.info(`Demo tenants updated: ${newDemoCount} demo tenants available`)
+            }, 100)
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to fetch demo tenants'
+            logger.api.error('Failed to fetch demo tenants', { error: message })
+
+            set({
+              tenantsLoading: false,
+              tenantsError: message
+            })
+
             throw error
           }
         },
@@ -258,7 +295,11 @@ export const useTenantStore = create<TenantStore>()(
               switchTenantError: null
             })
 
-            const tenant = await tenantService.switchTenant(normalizedSlug)
+            const availableTenants = get().availableTenants
+            const tenantSource = availableTenants.find(t => t.slug === normalizedSlug)
+            const tenantEnvironment = tenantSource?.environment === 'demo' ? 'demo' : 'production'
+
+            const tenant = await tenantService.switchTenant(normalizedSlug, tenantEnvironment)
 
             // Determine environment from tenant domain
             const environment = tenant.domain?.includes('planhatdemo.com') ? 'demo' : 'production'
@@ -328,13 +369,13 @@ export const useTenantStore = create<TenantStore>()(
         },
 
         // Tenant status checking
-        fetchAllTenantStatuses: async () => {
+        fetchAllTenantStatuses: async (environment: 'production' | 'demo' | 'all' = 'production') => {
           // Extract all state BEFORE any async operations
           const now = Date.now()
-          const lastFetch = get().lastStatusFetch
+          const lastFetch = environment === 'demo' ? get().lastDemoStatusFetch : get().lastStatusFetch
 
           // Check cache freshness
-          if (lastFetch && now - lastFetch < STATUS_CACHE_DURATION) {
+          if (environment !== 'all' && lastFetch && now - lastFetch < STATUS_CACHE_DURATION) {
             return
           }
 
@@ -344,13 +385,27 @@ export const useTenantStore = create<TenantStore>()(
               statusError: null
             })
 
-            // Only fetch production environment by default
-            const statuses = await tenantService.fetchAllTenantsWithStatus(false)
+            const statuses = await tenantService.fetchAllTenantsWithStatus(environment)
 
-            set({
-              tenantStatuses: statuses,
-              statusLoading: false,
-              lastStatusFetch: now
+            set((prevState) => {
+              let mergedStatuses: TenantStatus[]
+
+              if (environment === 'demo') {
+                const prodStatuses = prevState.tenantStatuses.filter(status => (status.environment || 'production') === 'production')
+                mergedStatuses = [...prodStatuses, ...statuses]
+              } else if (environment === 'production') {
+                const demoStatuses = prevState.tenantStatuses.filter(status => status.environment === 'demo')
+                mergedStatuses = [...statuses, ...demoStatuses]
+              } else {
+                mergedStatuses = statuses
+              }
+
+              return {
+                tenantStatuses: mergedStatuses,
+                statusLoading: false,
+                lastStatusFetch: environment === 'demo' ? prevState.lastStatusFetch : now,
+                lastDemoStatusFetch: environment === 'production' ? prevState.lastDemoStatusFetch : now
+              }
             })
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to fetch tenant statuses'
@@ -601,7 +656,9 @@ export const useTenantStore = create<TenantStore>()(
           set({
             lastTenantsFetch: null,
             lastUsageFetch: null,
-            lastStatusFetch: null
+            lastStatusFetch: null,
+            lastDemoFetch: null,
+            lastDemoStatusFetch: null
           })
         }
       }),
@@ -623,9 +680,7 @@ export const useTenantStore = create<TenantStore>()(
           // Only persist essential state - DON'T persist tenant statuses or demo tenants
           currentTenant: state.currentTenant,
           // CRITICAL: Only persist production tenants (demo tenants cleared on app restart)
-          availableTenants: state.availableTenants.filter(t =>
-            !t.domain?.includes('planhatdemo.com')
-          ),
+          availableTenants: state.availableTenants.filter(t => t.environment !== 'demo'),
           tenantSettings: state.tenantSettings,
           tenantLimits: state.tenantLimits,
           lastTenantsFetch: state.lastTenantsFetch
@@ -633,14 +688,14 @@ export const useTenantStore = create<TenantStore>()(
         }),
         onRehydrateStorage: () => (state) => {
           if (state) {
-            const demoCount = state.availableTenants.filter(t => t.domain?.includes('planhatdemo.com')).length
-            const prodCount = state.availableTenants.filter(t => !t.domain?.includes('planhatdemo.com')).length
+            const demoCount = state.availableTenants.filter(t => t.environment === 'demo').length
+            const prodCount = state.availableTenants.filter(t => t.environment !== 'demo').length
             logger.api.info(`Store rehydrated from persistence: ${state.availableTenants.length} tenants (${prodCount} prod, ${demoCount} demo - should be 0)`)
 
             // CRITICAL: Demo tenants should NEVER be in rehydrated state (filtered by partialize)
             if (demoCount > 0) {
               logger.api.warn(`WARNING: ${demoCount} demo tenants found in rehydrated state - this should not happen! Filtering them out now.`)
-              state.availableTenants = state.availableTenants.filter(t => !t.domain?.includes('planhatdemo.com'))
+              state.availableTenants = state.availableTenants.filter(t => t.environment !== 'demo')
             }
 
             // CRITICAL FIX: Clear stale availableTenants if no currentTenant
@@ -829,7 +884,7 @@ export const initializeTenantStore = async () => {
 
       try {
         // Fetch and check all tenants (production only, no demo)
-        const tenantsWithStatus = await tenantService.fetchAllTenantsWithStatus(false)
+        const tenantsWithStatus = await tenantService.fetchAllTenantsWithStatus('production')
 
         if (tenantsWithStatus.length > 0) {
           processTenants(tenantsWithStatus)
@@ -863,7 +918,7 @@ export const initializeTenantStore = async () => {
 
       try {
         // Fetch and check all tenants (production only, no demo)
-        const tenantsWithStatus = await tenantService.fetchAllTenantsWithStatus(false)
+        const tenantsWithStatus = await tenantService.fetchAllTenantsWithStatus('production')
 
         if (tenantsWithStatus.length > 0) {
           processTenants(tenantsWithStatus)

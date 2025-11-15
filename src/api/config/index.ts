@@ -321,6 +321,19 @@ export const entityCacheConfig = {
   // Search Operations
   search: {
     staleTime: 5 * 60 * 1000          // 5 minutes - search results
+  },
+
+  // Roles and Permissions (permissions.queries.ts)
+  roles: {
+    staleTime: 10 * 60 * 1000         // 10 minutes - role data is relatively stable
+  },
+
+  role: {
+    staleTime: 10 * 60 * 1000         // 10 minutes
+  },
+
+  rolePermissions: {
+    staleTime: 10 * 60 * 1000         // 10 minutes - permissions don't change often
   }
 }
 

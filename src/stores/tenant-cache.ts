@@ -27,7 +27,7 @@ interface TenantStatusEntry {
 
 // In-memory cache storage
 const cache = {
-  tenantList: null as CacheEntry<TenantListResponse[]> | null,
+  tenantList: new Map<string, CacheEntry<TenantListResponse[]>>(),
   tenantStatuses: new Map<string, TenantStatusEntry>(),
   initializationComplete: false,
 }
@@ -51,45 +51,50 @@ function isCacheValid<T>(entry: CacheEntry<T> | null): boolean {
  * Tenant List Cache
  */
 export const tenantListCache = {
-  get(environments?: string): TenantListResponse[] | null {
-    if (isCacheValid(cache.tenantList)) {
-      // Check if cached environments match requested environments
-      if (environments && cache.tenantList!.environments !== environments) {
-        log.debug('Tenant list cache miss - environment mismatch', {
-          cached: cache.tenantList!.environments,
-          requested: environments
-        })
-        return null
-      }
-
+  get(environments = 'prod'): TenantListResponse[] | null {
+    const entry = cache.tenantList.get(environments)
+    if (isCacheValid(entry ?? null)) {
       log.debug('Tenant list cache hit', {
-        count: cache.tenantList!.data.length,
-        age: Date.now() - cache.tenantList!.timestamp,
-        environments: cache.tenantList!.environments
+        count: entry!.data.length,
+        age: Date.now() - entry!.timestamp,
+        environments,
       })
-      return cache.tenantList!.data
+      return entry!.data
     }
-    log.debug('Tenant list cache miss')
+    if (entry) {
+      log.debug('Tenant list cache expired', {
+        environments,
+        age: Date.now() - entry.timestamp,
+      })
+      cache.tenantList.delete(environments)
+    } else {
+      log.debug('Tenant list cache miss', { environments })
+    }
     return null
   },
 
-  set(tenants: TenantListResponse[], ttl = DEFAULT_TTL, environments?: string): void {
-    cache.tenantList = {
+  set(tenants: TenantListResponse[], ttl = DEFAULT_TTL, environments = 'prod'): void {
+    cache.tenantList.set(environments, {
       data: tenants,
       timestamp: Date.now(),
       ttl,
       environments,
-    }
+    })
     log.debug('Tenant list cached', { count: tenants.length, ttl, environments })
   },
 
-  clear(): void {
-    cache.tenantList = null
-    log.debug('Tenant list cache cleared')
+  clear(environments?: string): void {
+    if (environments) {
+      cache.tenantList.delete(environments)
+      log.debug('Tenant list cache cleared for environment', { environments })
+    } else {
+      cache.tenantList.clear()
+      log.debug('All tenant list caches cleared')
+    }
   },
 
-  isValid(): boolean {
-    return isCacheValid(cache.tenantList)
+  isValid(environments = 'prod'): boolean {
+    return isCacheValid(cache.tenantList.get(environments) ?? null)
   },
 }
 
@@ -191,11 +196,12 @@ export function clearAllCaches(): void {
  */
 export function getCacheStats() {
   return {
-    tenantList: cache.tenantList ? {
-      count: cache.tenantList.data.length,
-      age: Date.now() - cache.tenantList.timestamp,
-      valid: isCacheValid(cache.tenantList),
-    } : null,
+    tenantList: Array.from(cache.tenantList.entries()).map(([env, entry]) => ({
+      environment: env,
+      count: entry.data.length,
+      age: Date.now() - entry.timestamp,
+      valid: isCacheValid(entry),
+    })),
     tenantStatuses: {
       count: cache.tenantStatuses.size,
       entries: Array.from(cache.tenantStatuses.entries()).map(([slug, entry]) => ({

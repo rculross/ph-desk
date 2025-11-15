@@ -62,13 +62,19 @@ export const queryKeys = {
   workflowAnalytics: (id: string) => [...queryKeys.workflow(id), 'analytics'] as const,
   workflowTemplates: ['workflowtemplates'] as const,
 
+  // Roles and Permissions
+  roles: ['roles'] as const,
+  role: (id: string) => [...queryKeys.roles, id] as const,
+  rolePermissions: (id?: string) => id ? [...queryKeys.role(id), 'permissions'] as const : [...queryKeys.roles, 'permissions'] as const,
+
   // Search
   search: (query: string, entityTypes?: string[]) => ['search', query, entityTypes] as const,
 
   // Lists with filters and pagination
   list: (entity: string, filters?: any, pagination?: any) =>
     [entity, 'list', filters, pagination] as const,
-  infinite: (entity: string, filters?: any) => [entity, 'infinite', filters] as const
+  infinite: (entity: string, filters?: any) => [entity, 'infinite', filters] as const,
+  detail: (entity: string, id: string) => [entity, 'detail', id] as const
 }
 
 // Default query options for different types of queries (from unified config)

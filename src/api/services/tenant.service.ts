@@ -10,7 +10,6 @@ import type {
 } from '../../types'
 import { logger } from '../../utils/logger'
 import {
-  detectApiBaseURL,
   setTenantSlug,
   getTenantSlug,
   updateClientForCurrentEnvironment,
@@ -177,6 +176,7 @@ export interface TenantInfo extends TenantContext {
   lastActivity: string
   tenantSlug?: string // Add tenantSlug for display purposes
   verified?: boolean // Mark tab-discovered tenants as verified (skip status checks)
+  environment?: 'production' | 'demo'
 }
 
 export interface TenantSettings {
@@ -320,13 +320,26 @@ class TenantService {
    * Get list of tenants accessible to current user
    * Uses the /myprofile/tenants endpoint instead of /tenants
    */
-  async getTenants(filters?: TenantFilters): Promise<TenantInfo[]> {
+  async getTenants(
+    filters?: TenantFilters,
+    environment: 'production' | 'demo' | 'all' = 'production'
+  ): Promise<TenantInfo[]> {
     try {
-      log.debug(`Fetching available tenants from all environments`)
+      log.debug(`Fetching available tenants for environment: ${environment}`)
 
-      // Fetch from both production and demo environments
-      // Uses lastProdTenant and lastDemoTenant from storage automatically
-      const tenants = await this.fetchTenantsFromBothEnvironments(undefined, true)
+      const includeDemo = environment !== 'production'
+      const includeProduction = environment !== 'demo'
+
+      if (!includeDemo && !includeProduction) {
+        return []
+      }
+
+      // Fetch from requested environments only
+      const tenants = await this.fetchTenantsFromBothEnvironments(
+        undefined,
+        includeDemo,
+        includeProduction
+      )
 
       log.info(`Processing tenants from API: ${tenants.length} total tenants`)
 
@@ -358,6 +371,8 @@ class TenantService {
         // Preserve verified flag from tab discovery
         const verified = (tenant as any)._verified || false
 
+        const environment = (tenant as any)._environment === 'demo' ? 'demo' : 'production'
+
         return {
           id: tenant._id,
           slug: normalizedSlug,
@@ -365,6 +380,7 @@ class TenantService {
           tenantSlug: normalizedSlug, // Preserve tenantSlug for display
           verified, // Mark tab-discovered tenants as verified
           domain,
+          environment,
           logo: undefined,
           settings: {} as TenantSettings,
           features: [],
@@ -403,8 +419,8 @@ class TenantService {
       })
 
       // Log grouped tenant discovery results
-      const prodTenants = tenantInfos.filter(t => t.domain?.includes('planhat.com') && !t.domain.includes('planhatdemo.com'))
-      const demoTenants = tenantInfos.filter(t => t.domain?.includes('planhatdemo.com'))
+      const prodTenants = tenantInfos.filter(t => t.environment !== 'demo')
+      const demoTenants = tenantInfos.filter(t => t.environment === 'demo')
       log.debug(`Fetched tenants - Production: [${prodTenants.map(t => t.slug).join(', ')}], Demo: [${demoTenants.map(t => t.slug).join(', ')}]`)
 
       // Apply filters if provided
@@ -471,9 +487,12 @@ class TenantService {
    * Get tenant by slug
    * Uses the available tenants list since /tenants/slug/* endpoints don't exist.
    */
-  async getTenantBySlug(slug: string): Promise<TenantInfo | null> {
+  async getTenantBySlug(
+    slug: string,
+    environment: 'production' | 'demo' | 'all' = 'production'
+  ): Promise<TenantInfo | null> {
     try {
-      const tenants = await this.getTenants()
+      const tenants = await this.getTenants(undefined, environment)
       return tenants.find(tenant => tenant.slug.toLowerCase() === slug.toLowerCase()) ?? null
     } catch (error) {
       log.error('Failed to get tenant by slug:', error)
@@ -523,11 +542,14 @@ class TenantService {
   /**
    * Switch to a different tenant
    */
-  async switchTenant(tenantSlug: string): Promise<TenantInfo> {
+  async switchTenant(
+    tenantSlug: string,
+    environment: 'production' | 'demo' | 'all' = 'production'
+  ): Promise<TenantInfo> {
     try {
       // Normalize tenant slug to lowercase
       const normalizedSlug = tenantSlug.toLowerCase()
-      const tenant = await this.getTenantBySlug(normalizedSlug)
+      const tenant = await this.getTenantBySlug(normalizedSlug, environment)
 
       if (!tenant) {
         throw new Error(`Tenant with slug "${tenantSlug}" not found`)
@@ -650,17 +672,18 @@ class TenantService {
       // Normalize tenant slug to lowercase
       const normalizedSlug = tenantSlug.toLowerCase()
 
-      // Set the correct base URL for the environment
       const baseURL = environment === 'demo' ? 'https://api.planhatdemo.com' : 'https://api.planhat.com'
-      updateHttpClient({ baseURL })
-
-      // Try to call /myprofile with the tenant slug
-      const response = await this.httpClient.get<UserProfile>(`/myprofile`, {
-        tenantSlug: normalizedSlug
+      const client = axios.create({
+        baseURL,
+        timeout: getTimeoutConfig('default'),
+        headers: getStandardHeaders(),
+        withCredentials: apiConfig.withCredentials
       })
 
+      const { data } = await client.get<UserProfile>(`/myprofile?tenantSlug=${normalizedSlug}`)
+
       // If we got a response with an ID, the connection is valid
-      if (response && response._id) {
+      if (data && data._id) {
         log.info(`Tenant connection validated: ${normalizedSlug} (${environment})`)
         return true
       }
@@ -788,8 +811,26 @@ class TenantService {
    */
   async fetchTenantsFromBothEnvironments(
     prodTenantSlug?: string,
-    includeDemoEnvironment = false
+    includeDemoEnvironment = false,
+    includeProductionEnvironment = true
   ): Promise<TenantListResponse[]> {
+    if (!includeDemoEnvironment && !includeProductionEnvironment) {
+      return []
+    }
+
+    const envKey = includeProductionEnvironment
+      ? includeDemoEnvironment
+        ? 'prod+demo'
+        : 'prod'
+      : 'demo'
+
+    // Check cache first with environment validation
+    const cached = tenantListCache.get(envKey)
+    if (cached) {
+      log.debug(`Using cached tenant list (${cached.length} tenants) for key: ${envKey}`)
+      return cached
+    }
+
     // Get production tenant from persistent storage
     const tenantStorage = await window.electron.tenant.getStorage()
 
@@ -797,64 +838,61 @@ class TenantService {
     const { useTenantStore } = await import('../../stores/tenant.store')
     const lastDemoTenant = useTenantStore.getState().lastDemoTenant
 
-    // Create environment key for cache (ensures prod-only and prod+demo caches don't mix)
-    const envKey = includeDemoEnvironment ? 'prod+demo' : 'prod'
-
-    // Check cache first with environment validation
-    const cached = tenantListCache.get(envKey)
-    if (cached) {
-      log.debug(`Using cached tenant list (${cached.length} tenants) for environments: ${envKey}`)
-      return cached
-    }
-
     // Determine slugs for each environment
     const prodSlug = (prodTenantSlug || tenantStorage.lastProdTenant || 'planhat').toLowerCase()
-    const demoSlug = lastDemoTenant?.toLowerCase() || ''
+    const demoSlug = lastDemoTenant?.toLowerCase()
 
-    log.info(`Fetching tenants from ${includeDemoEnvironment ? 'production + demo' : 'production only'} - Prod slug: ${prodSlug}${includeDemoEnvironment ? `, Demo slug: ${demoSlug || 'none'}` : ''}`)
+    log.info(
+      `Fetching tenants - Production: ${includeProductionEnvironment ? prodSlug : 'skipped'}, Demo: ${includeDemoEnvironment ? demoSlug || 'none' : 'skipped'}`
+    )
 
-    // Build list of environments to fetch from
-    const fetchPromises = [this.fetchAllAvailableTenants(prodSlug, 'production')]
+    const fetchConfigs: Array<{
+      env: 'production' | 'demo'
+      promise: Promise<TenantListResponse[]>
+    }> = []
 
-    // Only fetch from demo if requested AND we have a demo tenant slug
-    if (includeDemoEnvironment && demoSlug) {
-      fetchPromises.push(this.fetchAllAvailableTenants(demoSlug, 'demo'))
-    } else if (includeDemoEnvironment && !demoSlug) {
-      log.info('Skipping demo tenant fetch - no demo tenant available')
+    if (includeProductionEnvironment) {
+      fetchConfigs.push({
+        env: 'production',
+        promise: this.fetchAllAvailableTenants(prodSlug, 'production')
+      })
     }
 
-    // Fetch from requested environments in parallel
-    const results = await Promise.allSettled(fetchPromises)
+    if (includeDemoEnvironment) {
+      if (demoSlug) {
+        fetchConfigs.push({
+          env: 'demo',
+          promise: this.fetchAllAvailableTenants(demoSlug, 'demo')
+        })
+      } else {
+        log.info('Skipping demo tenant fetch - no demo tenant available yet')
+      }
+    }
 
     const allTenants: TenantListResponse[] = []
 
-    // Add production tenants (always first in results array)
-    if (results.length > 0) {
-      const prodResult = results[0]
-      if (prodResult && prodResult.status === 'fulfilled') {
-        // Tenants already have _environment and _sourceDomain from fetchAllAvailableTenants
-        allTenants.push(...prodResult.value)
-        log.info(`Fetched ${prodResult.value.length} production tenants`)
-      } else if (prodResult && prodResult.status === 'rejected') {
-        log.warn('Failed to fetch production tenants:', prodResult.reason)
-      }
+    if (fetchConfigs.length === 0) {
+      return allTenants
     }
 
-    // Add demo tenants if requested (second in results array)
-    if (includeDemoEnvironment && results.length > 1) {
-      const demoResult = results[1]
-      if (demoResult && demoResult.status === 'fulfilled') {
-        // Tenants already have _environment and _sourceDomain from fetchAllAvailableTenants
-        allTenants.push(...demoResult.value)
-        log.info(`Fetched ${demoResult.value.length} demo tenants`)
-      } else if (demoResult && demoResult.status === 'rejected') {
-        log.warn('Failed to fetch demo tenants:', demoResult.reason)
+    const results = await Promise.allSettled(fetchConfigs.map(config => config.promise))
+
+    results.forEach((result, index) => {
+      const env = fetchConfigs[index]?.env
+      if (!env) {
+        return
       }
-    }
 
-    log.info(`Total tenants fetched: ${allTenants.length}`)
+      if (result.status === 'fulfilled') {
+        allTenants.push(...result.value)
+        log.info(`Fetched ${result.value.length} ${env} tenants`)
+      } else {
+        log.warn(`Failed to fetch ${env} tenants:`, result.reason)
+      }
+    })
 
-    // Cache the result with environment key
+    log.info(`Total tenants fetched for key ${envKey}: ${allTenants.length}`)
+
     if (allTenants.length > 0) {
       tenantListCache.set(allTenants, undefined, envKey)
     }
@@ -866,7 +904,7 @@ class TenantService {
    * Check if a tenant is active by calling /myprofile?tenantSlug=<tenant>
    * Uses cache to prevent redundant checks
    */
-  async checkTenantStatus(tenantSlug: string, environment?: 'production' | 'demo'): Promise<boolean> {
+  async checkTenantStatus(tenantSlug: string, environment: 'production' | 'demo'): Promise<boolean> {
     // Check cache first
     const cached = tenantStatusCache.get(tenantSlug)
     if (cached !== null) {
@@ -874,15 +912,7 @@ class TenantService {
     }
 
     try {
-      let baseURL: string
-
-      if (environment) {
-        // Use the provided environment to determine the correct API base URL
-        baseURL = environment === 'demo' ? 'https://api.planhatdemo.com' : 'https://api.planhat.com'
-      } else {
-        // Fall back to tab-based detection if environment is not provided
-        baseURL = await detectApiBaseURL()
-      }
+      const baseURL = environment === 'demo' ? 'https://api.planhatdemo.com' : 'https://api.planhat.com'
 
       // Create separate HTTP client for status checking to avoid modifying global client
       const statusClient = axios.create({
@@ -924,11 +954,18 @@ class TenantService {
    * @param includeDemoEnvironment - Whether to check demo environment (default: false)
    * @returns Array of tenant statuses with authentication information
    */
-  async fetchAllTenantsWithStatus(includeDemoEnvironment = false): Promise<TenantStatus[]> {
+  async fetchAllTenantsWithStatus(
+    environment: 'production' | 'demo' | 'all' = 'production'
+  ): Promise<TenantStatus[]> {
     try {
-      // Step 1: Fetch tenants from requested environments
-      // Uses lastProdTenant (persistent) and lastDemoTenant (in-memory) automatically
-      const tenants = await this.fetchTenantsFromBothEnvironments(undefined, includeDemoEnvironment)
+      const includeDemo = environment !== 'production'
+      const includeProduction = environment !== 'demo'
+
+      const tenants = await this.fetchTenantsFromBothEnvironments(
+        undefined,
+        includeDemo,
+        includeProduction
+      )
 
       log.info(`Checking authentication status for ${tenants.length} tenants`)
 
@@ -941,7 +978,26 @@ class TenantService {
       const statusPromises = tenants.map(async (tenant): Promise<TenantStatus> => {
         try {
           // Extract environment from tenant data
-          const environment = (tenant as any)._environment as 'production' | 'demo' | undefined
+          let environment = (tenant as any)._environment as 'production' | 'demo' | undefined
+          if (!environment && (tenant as any)._sourceDomain) {
+            environment = (tenant as any)._sourceDomain.includes('planhatdemo.com') ? 'demo' : 'production'
+          }
+
+          if (!environment) {
+            const inferredDomain = (tenant as any).domain as string | undefined
+            environment = inferredDomain?.includes('planhatdemo.com') ? 'demo' : 'production'
+          }
+
+          // Skip tenants we still cannot classify
+          if (!environment) {
+            log.warn('Skipping tenant status check due to unknown environment', { tenant: tenant.tenantSlug })
+            return {
+              tenantSlug: tenant.tenantSlug,
+              name: tenant.name,
+              isActive: false,
+              environment: 'production'
+            }
+          }
 
           // Ping /myprofile?tenantSlug={slug} to check if authenticated
           const isActive = await this.checkTenantStatus(tenant.tenantSlug, environment)
@@ -968,9 +1024,15 @@ class TenantService {
       // Step 3: Filter based on environment
       // Production: Show ALL (authenticated + unauthenticated)
       // Demo: Show ONLY authenticated
-      const filteredResults = results.filter(tenant => {
-        const environment = tenant.environment || 'production'
-        return environment === 'production' || tenant.isActive
+      const filteredResults = results.filter(status => {
+        const statusEnv = status.environment || 'production'
+        if (environment === 'all') {
+          return statusEnv === 'production' || status.isActive
+        }
+        if (environment === 'demo') {
+          return statusEnv === 'demo' && status.isActive
+        }
+        return statusEnv === 'production'
       })
 
       // Log summary (consolidated)

@@ -75,12 +75,16 @@ class AuthService {
           log.debug('[Auth] Could not retrieve tenant storage', { error })
         }
 
-        // Import HTTP client and set tenant slug for verification
-        const { updateHttpClient } = await import('../api/client/http-client')
+        // Import HTTP client helpers and set tenant slug for verification
+        const { updateHttpClient, updateClientForCurrentEnvironment } = await import('../api/client/http-client')
 
         // First, try with the stored tenant slug if available
         if (validTenantSlug) {
           log.info(`[Auth] Verifying authentication with stored tenant: ${validTenantSlug}`)
+          const tenantDomain = environment === 'demo'
+            ? `ws.planhatdemo.com/${validTenantSlug}`
+            : `ws.planhat.com/${validTenantSlug}`
+          await updateClientForCurrentEnvironment(tenantDomain)
           updateHttpClient({ tenantSlug: validTenantSlug })
 
           try {
@@ -106,6 +110,7 @@ class AuthService {
         if (!isAuthenticated && storedAuth.environment === 'production') {
           log.info("[Auth] Trying 'planhat' as fallback tenant")
           validTenantSlug = 'planhat'
+          await updateClientForCurrentEnvironment('ws.planhat.com/planhat')
           updateHttpClient({ tenantSlug: validTenantSlug })
 
           try {
@@ -294,6 +299,15 @@ class AuthService {
 
       if (isAuthenticated !== this.authState.isAuthenticated) {
         this.authState.isAuthenticated = isAuthenticated
+
+        // CRITICAL: Sync to Zustand auth store
+        try {
+          const { useAuthStore } = await import('../stores/auth.store')
+          useAuthStore.getState().setAuthenticated(isAuthenticated)
+          log.debug(`[Auth] Auth store synced - isAuthenticated: ${isAuthenticated}`)
+        } catch (error) {
+          log.error('[Auth] Failed to sync auth store', { error })
+        }
 
         if (!isAuthenticated) {
           // Session expired

@@ -14,6 +14,7 @@ export * from './auth.queries'
 export * from './issues.queries'
 export * from './companies.queries'
 export * from './workflows.queries'
+export * from './permissions.queries'
 
 // Query client configuration and utilities are exported from ../query-client directly
 // Avoiding duplicate exports to prevent import conflicts

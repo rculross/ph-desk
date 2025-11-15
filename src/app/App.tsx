@@ -14,7 +14,8 @@ import {
   LinkIcon,
   NetworkIcon,
   HomeIcon,
-  Globe
+  Globe,
+  ShieldIcon
 } from 'lucide-react'
 import { Toaster } from 'react-hot-toast'
 
@@ -36,6 +37,7 @@ import { IssueExporter } from './components/IssueExporter'
 import { LLMIntegration } from './components/LLMIntegration'
 import { LoginPrompt } from './components/LoginPrompt'
 import { LogzExplorer } from './components/LogzExplorer'
+import { PermissionsExporter } from './components/PermissionsExporter'
 // Preferences component removed - now using native electron-preferences dialog (File -> Preferences)
 import { SalesforceIntegration } from './components/SalesforceIntegration'
 import { WorkflowTemplateExporter } from './components/WorkflowExporter'
@@ -43,7 +45,7 @@ import { SampleDataProgressModal } from '../components/SampleDataProgress'
 import { sampleDataService, type SampleDataProgress } from '../services/sample-data.service'
 
 // Navigation items
-type NavItem = 'home' | 'issues' | 'workflows' | 'flex' | 'salesforce-integration' | 'logz-explorer' | 'llm-integration' | 'connected-apis' | 'endpoints'
+type NavItem = 'home' | 'issues' | 'workflows' | 'flex' | 'permissions' | 'salesforce-integration' | 'logz-explorer' | 'llm-integration' | 'connected-apis' | 'endpoints'
 
 interface NavigationItem {
   id: NavItem
@@ -80,6 +82,12 @@ const navigationCategories: NavigationCategory[] = [
         label: 'Flex Export',
         icon: DatabaseIcon,
         description: 'Universal API exporter for any endpoint'
+      },
+      {
+        id: 'permissions',
+        label: 'Permissions',
+        icon: ShieldIcon,
+        description: 'Export role and permission data'
       }
     ]
   },
@@ -350,6 +358,8 @@ export const App: React.FC = () => {
         return <WorkflowTemplateExporter />
       case 'flex':
         return <FlexExporter />
+      case 'permissions':
+        return <PermissionsExporter />
       case 'salesforce-integration':
         return <SalesforceIntegration />
       case 'logz-explorer':

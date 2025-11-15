@@ -405,6 +405,7 @@ export type EntityType =
   | 'note'
   | 'custom'
   | 'salesforce-field'
+  | 'role'
 
 export interface ActivitySource {
   type: 'web' | 'api' | 'integration' | 'automation' | 'import'

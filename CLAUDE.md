@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PH Tools Desktop is an Electron desktop application providing intelligent tools and automation for Planhat platform users. Built with React, TypeScript, Vite, and Electron, it was migrated from a Chrome extension and includes advanced features like data export, LLM integration, and Salesforce connectivity.
 
-## Core Design Philosopies that MUST be followed
-- **Prefer simpl solutions** We don't want to be complex.  Always prefer the solutions that is the simplest and changes the least amount of code
+## Core Design Philosophies that MUST be followed
+- **Prefer simple solutions** We don't want to be complex. Always prefer the solution that is the simplest and changes the least amount of code
 - **Do Not Change Patterns or Architecture** Only the Typescript Subagent can make decisions on architecure and coding patterns
 - **Update only what is asked** Perform the actions that are asked of you. Do not make changes beyond the scope of the request.
 - **Always Ask** when in doubt always ask for clarificaiton.  hours upon hours are wasted on incomplete or misunderstood specs.  Asking saves precious time.
@@ -15,6 +15,14 @@ PH Tools Desktop is an Electron desktop application providing intelligent tools 
 - **The API is Sacred** The entire extension works via Planhat's bespoke API practices.  DO NOT ASSUME how it works.  Do not change API end points without first asking.  The API service is only edited with permission from the user.  If you do not follow this rule you will screw up the program and be terminated.
 
 **Stack**: Electron 38 + React 18 + TypeScript 5 + Vite 5 + Zustand + TanStack Query
+
+## Communication Style
+
+**DO NOT show code snippets in responses** unless explicitly asked. The user prefers quick iteration of ideas and action without reading through code examples. Instead:
+- Describe what you're doing or what needs to be done
+- Use tool calls to make the actual changes
+- Reference file paths and line numbers when discussing code (e.g., `src/api/config/index.ts:42`)
+- Keep responses concise and action-oriented
 
 ## Version Management
 

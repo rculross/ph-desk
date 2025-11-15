@@ -60,9 +60,9 @@ export interface UseTenantSelectorReturn {
  */
 const formatTenantOption = (tenant: TenantInfo, tenantStatus?: { tenantSlug: string; isActive: boolean } | null): TenantOption => {
   // Determine environment based on domain or current URL context
-  const environment: 'production' | 'demo' = tenant.domain?.includes('planhatdemo.com')
+  const environment: 'production' | 'demo' = tenant.environment ?? (tenant.domain?.includes('planhatdemo.com')
     ? 'demo'
-    : 'production'
+    : 'production')
 
   // Note: Individual demo tenant detection logging removed to reduce repetition
   // Demo tenants are now logged in bulk in the useTenantSelector hook
@@ -116,12 +116,16 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
 
     // Actions
     fetchAvailableTenants,
+    loadDemoTenants,
     fetchAllTenantStatuses,
     switchTenant: switchTenantAction,
     clearError,
     clearSwitchTenantError,
     refreshTenantData,
-    getTenantStatus
+    getTenantStatus,
+    lastDemoTenant,
+    setLastDemoTenant,
+    getLastDemoTenant
   } = useTenantStore()
 
   // Format current tenant with status data
@@ -142,8 +146,8 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
     // Debug: Log what we're receiving from the store
     log('info', `Hook: Received from store: ${rawAvailableTenants.length} tenants`)
 
-    const demoTenants = rawAvailableTenants.filter(t => t.domain?.includes('planhatdemo.com'))
-    const prodTenants = rawAvailableTenants.filter(t => !t.domain?.includes('planhatdemo.com'))
+    const demoTenants = rawAvailableTenants.filter(t => t.environment === 'demo')
+    const prodTenants = rawAvailableTenants.filter(t => t.environment !== 'demo')
 
     if (rawAvailableTenants.length > 0) {
       if (prodTenants.length > 0) {
@@ -309,7 +313,7 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
 
     if (shouldRefreshStatuses) {
       log('debug', `Refreshing tenant statuses (cache age: ${Math.round(cacheAge / 1000)}s)`)
-      fetchAllTenantStatuses()
+      fetchAllTenantStatuses('production')
     }
   }, [rawAvailableTenants.length, tenantStatuses.length, statusLoading, lastStatusFetch, fetchAllTenantStatuses, log])
 
@@ -364,15 +368,17 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
       await switchTenantAction(tenantSlug)
 
       // Refresh tenant statuses after switching
-      log('debug', 'Refreshing tenant statuses after switch')
-      await fetchAllTenantStatuses()
+      const targetTenantInfo = rawAvailableTenants.find(t => t.slug === tenantSlug)
+      const statusEnvironment = targetTenantInfo?.environment === 'demo' ? 'demo' : 'production'
+      log('debug', 'Refreshing tenant statuses after switch', { tenantSlug, statusEnvironment })
+      await fetchAllTenantStatuses(statusEnvironment)
 
       log('info', `Tenant switch completed successfully to ${tenantSlug}`)
     } catch (error) {
       log('error', `Failed to switch tenant from ${currentTenant?.slug ?? 'none'} to ${tenantSlug}: ${error instanceof Error ? error.message : 'Unknown error'}`)
       // Error is already handled by the store
     }
-  }, [switchTenantAction, fetchAllTenantStatuses, currentTenant?.slug, queryClient, log])
+  }, [switchTenantAction, fetchAllTenantStatuses, rawAvailableTenants, currentTenant?.slug, queryClient, log])
 
   // Refresh tenants and their statuses
   const refreshTenants = useCallback(async () => {
@@ -382,7 +388,7 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
       log('debug', 'Refreshing tenants and statuses')
       await Promise.all([
         fetchAvailableTenants(undefined, true), // Force refresh
-        fetchAllTenantStatuses()
+        fetchAllTenantStatuses('production')
       ])
       log('info', 'Tenant data refresh completed successfully')
     } catch (error) {
@@ -395,30 +401,26 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
     log('info', 'Refreshing production tenants')
 
     try {
-      const { tenantService } = await import('../api/services/tenant.service')
-      const statuses = await tenantService.refreshEnvironmentTenants('production')
+      await fetchAvailableTenants(undefined, true)
+      await fetchAllTenantStatuses('production')
 
-      // Check if any tenants are authenticated
-      const hasActiveTenants = statuses.some(t => t.isActive)
+      const storeState = useTenantStore.getState()
+      const hasActiveTenants = storeState.tenantStatuses.some(
+        status => (status.environment || 'production') === 'production' && status.isActive
+      )
 
       if (!hasActiveTenants) {
         log('warn', 'No authenticated production tenants found - opening login window')
-        // Open login for production environment
         const { authService } = await import('../services/auth.service')
         const authResult = await authService.login('production')
 
-        // After login, refresh tenants again
         await fetchAvailableTenants(undefined, true)
-        await fetchAllTenantStatuses()
+        await fetchAllTenantStatuses('production')
 
-        // Auto-switch to the newly authenticated tenant
         if (authResult.tenantSlug) {
           log('info', `Auto-switching to newly authenticated production tenant: ${authResult.tenantSlug}`)
           await switchTenant(authResult.tenantSlug)
         }
-      } else {
-        // Update store with new statuses
-        await fetchAllTenantStatuses()
       }
 
       log('info', 'Production tenant refresh completed')
@@ -434,29 +436,42 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
 
     try {
       const { tenantService } = await import('../api/services/tenant.service')
-      const statuses = await tenantService.refreshEnvironmentTenants('demo')
 
-      // Check if any tenants are authenticated (empty array = no demo tenant stored yet)
-      const hasActiveTenants = statuses.length > 0 && statuses.some(t => t.isActive)
+      let targetDemoTenant = getLastDemoTenant?.() ?? lastDemoTenant ?? null
+      let hasValidSession = false
 
-      if (!hasActiveTenants) {
-        log('info', 'No demo tenant found - opening login window')
-        // Open login for demo environment
+      if (targetDemoTenant) {
+        try {
+          hasValidSession = await tenantService.validateTenantConnection(targetDemoTenant, 'demo')
+          log('debug', `Existing demo tenant validation result: ${hasValidSession}`)
+        } catch (validationError) {
+          log('warn', 'Demo tenant validation failed', {
+            tenantSlug: targetDemoTenant,
+            error: validationError instanceof Error ? validationError.message : 'Unknown error'
+          })
+        }
+      }
+
+      if (!hasValidSession) {
+        log('info', 'No valid demo session - prompting login for ws.planhatdemo.com')
         const { authService } = await import('../services/auth.service')
         const authResult = await authService.login('demo')
 
-        // After login, refresh tenants again
-        await fetchAvailableTenants(undefined, true)
-        await fetchAllTenantStatuses()
-
-        // Auto-switch to the newly authenticated demo tenant
-        if (authResult.tenantSlug) {
-          log('info', `Auto-switching to newly authenticated demo tenant: ${authResult.tenantSlug}`)
-          await switchTenant(authResult.tenantSlug)
+        if (!authResult.tenantSlug) {
+          log('warn', 'Demo login completed without tenant slug - aborting refresh')
+          return
         }
-      } else {
-        // Update store with new statuses
-        await fetchAllTenantStatuses()
+
+        targetDemoTenant = authResult.tenantSlug
+        setLastDemoTenant(targetDemoTenant)
+      }
+
+      await loadDemoTenants(true)
+      await fetchAllTenantStatuses('demo')
+
+      if (targetDemoTenant) {
+        log('info', `Auto-switching to demo tenant: ${targetDemoTenant}`)
+        await switchTenant(targetDemoTenant)
       }
 
       log('info', 'Demo tenant refresh completed')
@@ -464,7 +479,15 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
       log('error', `Failed to refresh demo tenants: ${error instanceof Error ? error.message : 'Unknown error'}`)
       throw error
     }
-  }, [fetchAvailableTenants, fetchAllTenantStatuses, switchTenant, log])
+  }, [
+    fetchAllTenantStatuses,
+    loadDemoTenants,
+    setLastDemoTenant,
+    getLastDemoTenant,
+    lastDemoTenant,
+    switchTenant,
+    log
+  ])
 
   // Clear all errors
   const clearErrors = useCallback(() => {
