@@ -232,22 +232,7 @@ export function TableToolbar<TData>({
                   <Text strong>Show Columns</Text>
                 </div>
 
-                <Checkbox.Group
-                  value={table.getAllLeafColumns()
-                    .filter(column => column.id !== 'select' && column.getIsVisible())
-                    .map(column => column.id)
-                  }
-                  onChange={(checkedValues) => {
-                    const newVisibility: VisibilityState = {}
-                    table.getAllLeafColumns().forEach(column => {
-                      if (column.id !== 'select') {
-                        newVisibility[column.id] = checkedValues.includes(column.id)
-                      }
-                    })
-                    onColumnVisibilityChange?.(newVisibility)
-                  }}
-                  className="flex flex-col gap-1"
-                >
+                <div className="flex flex-col gap-1">
                   {(() => {
                     const allColumns = table.getAllLeafColumns().filter(column => column.id !== 'select')
                     const hiddenColumns = allColumns.filter(column => !column.getIsVisible())
@@ -263,7 +248,14 @@ export function TableToolbar<TData>({
                     ]
 
                     return orderedColumns.map(column => (
-                      <Checkbox key={column.id} value={column.id}>
+                      <Checkbox
+                        key={column.id}
+                        checked={column.getIsVisible()}
+                        onChange={(e) => {
+                          // Use TanStack Table's standard toggle method
+                          column.toggleVisibility()
+                        }}
+                      >
                         {typeof column.columnDef.header === 'string'
                           ? column.columnDef.header
                           : `Column ${column.id}`
@@ -271,7 +263,7 @@ export function TableToolbar<TData>({
                       </Checkbox>
                     ))
                   })()}
-                </Checkbox.Group>
+                </div>
               </div>
             )}
           >
