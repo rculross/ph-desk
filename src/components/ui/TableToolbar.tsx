@@ -251,21 +251,8 @@ export function TableToolbar<TData>({
                       <Checkbox
                         key={column.id}
                         checked={column.getIsVisible()}
-                        onChange={(e) => {
-                          console.group('🔵 [TableToolbar] Column Visibility Toggle')
-                          console.log('Column ID:', column.id)
-                          console.log('Was Visible:', column.getIsVisible())
-                          console.log('Full column visibility state BEFORE:', table?.getState().columnVisibility)
-
-                          // Use TanStack Table's standard toggle method
+                        onChange={() => {
                           column.toggleVisibility()
-
-                          // Log after toggle (use setTimeout to see the updated state)
-                          setTimeout(() => {
-                            console.log('Is Visible NOW:', column.getIsVisible())
-                            console.log('Full column visibility state AFTER:', table?.getState().columnVisibility)
-                            console.groupEnd()
-                          }, 0)
                         }}
                       >
                         {typeof column.columnDef.header === 'string'
