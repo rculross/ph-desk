@@ -17,7 +17,7 @@ import type {
   RowSelectionState,
   Table as TanStackTable
 } from '@tanstack/react-table'
-import { Dropdown, Checkbox, Typography } from 'antd'
+import { Dropdown, Checkbox, Typography, Button } from 'antd'
 // Radio removed - not used
 import { clsx } from 'clsx'
 import { format as formatDate } from 'date-fns'
@@ -513,6 +513,22 @@ export function IssueExporter({ className }: IssueExporterProps) {
               <div className="p-3 min-w-[200px] bg-white rounded-lg shadow-lg border border-gray-200">
                 <div className="flex justify-between items-center mb-2">
                   <Typography.Text strong>Show Columns</Typography.Text>
+                  <div className="flex gap-2">
+                    <Button
+                      type="text"
+                      size="small"
+                      onClick={() => tableRef.current?.toggleAllColumnsVisible(true)}
+                    >
+                      All
+                    </Button>
+                    <Button
+                      type="text"
+                      size="small"
+                      onClick={() => tableRef.current?.toggleAllColumnsVisible(false)}
+                    >
+                      None
+                    </Button>
+                  </div>
                 </div>
                 <div className="flex flex-col gap-1">
                   {tableRef.current?.getAllLeafColumns()
