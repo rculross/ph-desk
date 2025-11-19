@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 
 import { ConfigProvider } from 'antd'
 import { clsx } from 'clsx'
@@ -164,6 +164,11 @@ export const App: React.FC = () => {
     errors: [],
     isComplete: false
   })
+
+  const [isFindOpen, setIsFindOpen] = useState(false)
+  const [findQuery, setFindQuery] = useState('')
+  const [isFindResultEmpty, setIsFindResultEmpty] = useState(false)
+  const findInputRef = useRef<HTMLInputElement>(null)
 
   // Get current tenant from store
   const currentTenant = useActiveTenant()
@@ -347,6 +352,62 @@ export const App: React.FC = () => {
     return cleanup
   }, [log])
 
+  // Listen for menu:find-in-page IPC message (Cmd+F)
+  useEffect(() => {
+    if (!window.electron?.ipcRenderer) {
+      return
+    }
+
+    const handleFindInPage = () => {
+      log.info('[App] Find in page triggered from menu (Cmd+F)')
+      setIsFindOpen(true)
+      setTimeout(() => {
+        findInputRef.current?.focus()
+        findInputRef.current?.select()
+      }, 0)
+    }
+
+    // Subscribe to IPC message
+    const cleanup = window.electron.ipcRenderer.on('menu:find-in-page', handleFindInPage)
+
+    return cleanup
+  }, [log])
+
+  const closeFindOverlay = useCallback(() => {
+    setIsFindOpen(false)
+    setFindQuery('')
+    setIsFindResultEmpty(false)
+  }, [])
+
+  const performFind = useCallback(
+    (direction: 'forward' | 'backward' = 'forward') => {
+      if (!findQuery) {
+        setIsFindResultEmpty(false)
+        return
+      }
+
+      const found = window.find(findQuery, false, direction === 'backward')
+      setIsFindResultEmpty(!found)
+    },
+    [findQuery]
+  )
+
+  useEffect(() => {
+    if (!isFindOpen) {
+      return
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeFindOverlay()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isFindOpen, closeFindOverlay])
+
 
   const renderContent = (): React.ReactElement => {
     log.debug(`Rendering content for active tab: ${activeTab}`)
@@ -512,6 +573,57 @@ export const App: React.FC = () => {
         {/* Floating Progress Indicator */}
         <FloatingExportProgress />
 
+        {isFindOpen && (
+          <div className='fixed top-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 shadow-lg'>
+            <input
+              ref={findInputRef}
+              type='text'
+              autoComplete='off'
+              value={findQuery}
+              onChange={event => {
+                setFindQuery(event.target.value)
+                setIsFindResultEmpty(false)
+              }}
+              onKeyDown={event => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  performFind(event.shiftKey ? 'backward' : 'forward')
+                } else if (event.key === 'Escape') {
+                  event.preventDefault()
+                  closeFindOverlay()
+                }
+              }}
+              placeholder='Find in page'
+              className='h-8 w-56 rounded-md border border-gray-300 px-3 text-sm focus:border-planhat-blue focus:outline-none'
+            />
+            <button
+              type='button'
+              className='rounded-md border border-gray-200 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100'
+              onClick={() => performFind('backward')}
+            >
+              Prev
+            </button>
+            <button
+              type='button'
+              className='rounded-md border border-gray-200 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100'
+              onClick={() => performFind('forward')}
+            >
+              Next
+            </button>
+            <button
+              type='button'
+              className='rounded-md border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100'
+              onClick={closeFindOverlay}
+              aria-label='Close find'
+            >
+              ×
+            </button>
+            {isFindResultEmpty && (
+              <span className='text-xs text-red-500'>No matches</span>
+            )}
+          </div>
+        )}
+
         {/* Toast Notifications */}
         <Toaster
           position='bottom-right'
@@ -612,4 +724,3 @@ function Dashboard({ onNavigate: _onNavigate }: { onNavigate: (tab: NavItem) => 
     </div>
   )
 }
-

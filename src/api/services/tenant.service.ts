@@ -682,8 +682,9 @@ class TenantService {
 
       const { data } = await client.get<UserProfile>(`/myprofile?tenantSlug=${normalizedSlug}`)
 
-      // If we got a response with an ID, the connection is valid
-      if (data && data._id) {
+      // API returns { profile: { _id: ... }, permissions: [...], ... }
+      // If we got a response with a profile ID, the connection is valid
+      if (data && (data as any).profile?._id) {
         log.info(`Tenant connection validated: ${normalizedSlug} (${environment})`)
         return true
       }
@@ -923,10 +924,13 @@ class TenantService {
       })
 
       // Add tenant slug to request params without modifying global state
-      const response = await statusClient.get<UserProfile>(
+      const { data } = await statusClient.get<UserProfile>(
         `/myprofile?tenantSlug=${tenantSlug}`
       )
-      const isActive = response !== null && response !== undefined
+
+      // API returns { profile: { _id: ... }, permissions: [...], ... }
+      // Check if profile exists and has an _id
+      const isActive = !!(data && (data as any).profile?._id)
 
       // Cache the result
       tenantStatusCache.set(tenantSlug, isActive)

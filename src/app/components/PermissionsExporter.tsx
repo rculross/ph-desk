@@ -21,6 +21,7 @@ import { ShieldIcon } from 'lucide-react'
 import { getTenantSlug } from '../../api/client/http-client'
 import { useRoles, useRolePermissions } from '../../api/queries/permissions.queries'
 import type { Role } from '../../api/services/permissions.service'
+import { useUsersQuery } from '../../api/queries/users.queries'
 import { ExportFormatButtons, useSharedExporter } from '../../components/exporters'
 import { FieldsDropdownWrapper } from '../../components/ui/FieldsDropdown'
 import { OrderColumnsModal } from '../../components/ui/OrderColumnsModal'
@@ -82,6 +83,14 @@ export function PermissionsExporter({ className }: PermissionsExporterProps) {
     enabled: false // Only fetch when exporting
   })
 
+  // Fetch users data for counting users per role
+  const { data: usersData } = useUsersQuery({
+    filters: { isActive: true },
+    pagination: { limit: 2000 }
+  })
+
+  const users = usersData?.data ?? []
+
   // Refresh functionality
   const refetch = useCallback(() => {
     log.info('Refreshing roles data')
@@ -104,7 +113,12 @@ export function PermissionsExporter({ className }: PermissionsExporterProps) {
     totalCount,
     tenantSlug: tenantSlug ?? undefined,
     defaultExportConfig: exportDefaults,
-    buildFilename: format => `permissions_export_${formatDate(new Date(), 'yyyy-MM-dd')}`,
+    buildFilename: format => {
+      const now = new Date()
+      const dateStr = formatDate(now, 'yyyy-MM-dd')
+      const timeStr = formatDate(now, 'HH-mm')
+      return `${tenantSlug || 'unknown'}_permissions_export_${dateStr}_${timeStr}`
+    },
     fieldDetection: {
       sampleSize: 10,
       tenantSlug: undefined
@@ -173,10 +187,11 @@ export function PermissionsExporter({ className }: PermissionsExporterProps) {
 
           log.debug('Generating multi-sheet Excel workbook', {
             roleCount: roles.length,
-            permissionCount: permissions.length
+            permissionCount: permissions.length,
+            userCount: users.length
           })
 
-          const excelBuffer = await generatePermissionsExcel(roles, permissions)
+          const excelBuffer = await generatePermissionsExcel(roles, permissions, users)
 
           // Download the file
           const blob = new Blob([excelBuffer], {
@@ -185,7 +200,10 @@ export function PermissionsExporter({ className }: PermissionsExporterProps) {
           const url = URL.createObjectURL(blob)
           const link = document.createElement('a')
           link.href = url
-          link.download = `permissions_export_${formatDate(new Date(), 'yyyy-MM-dd')}.xlsx`
+          const now = new Date()
+          const dateStr = formatDate(now, 'yyyy-MM-dd')
+          const timeStr = formatDate(now, 'HH-mm')
+          link.download = `${tenantSlug || 'unknown'}_permissions_export_${dateStr}_${timeStr}.xlsx`
           document.body.appendChild(link)
           link.click()
           document.body.removeChild(link)
@@ -197,7 +215,7 @@ export function PermissionsExporter({ className }: PermissionsExporterProps) {
           const flatData = roles.map(role => ({
             'Role Name': role.name ?? '',
             'Description': role.description ?? '',
-            'External': role.external ? 'Yes' : 'No'
+            'External': role.external ? 'Yes' : null
           }))
 
           let content: string
@@ -222,7 +240,10 @@ export function PermissionsExporter({ className }: PermissionsExporterProps) {
           const url = URL.createObjectURL(blob)
           const link = document.createElement('a')
           link.href = url
-          link.download = `permissions_export_${formatDate(new Date(), 'yyyy-MM-dd')}.${extension}`
+          const now = new Date()
+          const dateStr = formatDate(now, 'yyyy-MM-dd')
+          const timeStr = formatDate(now, 'HH-mm')
+          link.download = `${tenantSlug || 'unknown'}_permissions_export_${dateStr}_${timeStr}.${extension}`
           document.body.appendChild(link)
           link.click()
           document.body.removeChild(link)

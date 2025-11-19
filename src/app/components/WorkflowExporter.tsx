@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useRef, useMemo } from 'react'
 
-import { ReloadOutlined, SettingOutlined, GroupOutlined, ClearOutlined } from '@ant-design/icons'
+import { ReloadOutlined, SettingOutlined, ClearOutlined } from '@ant-design/icons'
 import type {
   GroupingState,
   ExpandedState,
@@ -124,7 +124,12 @@ export function WorkflowTemplateExporter({ className }: WorkflowTemplateExporter
     items: workflowTemplates,
     totalCount,
     defaultExportConfig: exportDefaults,
-    buildFilename: format => `workflow_templates_export_${formatDate(new Date(), 'yyyy-MM-dd')}`,
+    buildFilename: format => {
+      const now = new Date()
+      const dateStr = formatDate(now, 'yyyy-MM-dd')
+      const timeStr = formatDate(now, 'HH-mm')
+      return `${tenantSlug || 'unknown'}_workflow_templates_export_${dateStr}_${timeStr}`
+    },
     streaming: {
       threshold: 5000,
       createRequest: context => ({
@@ -188,6 +193,28 @@ export function WorkflowTemplateExporter({ className }: WorkflowTemplateExporter
   })
 
   const tableRef = useRef<TanStackTable<Workflow> | null>(null)
+
+  // Handle table row selection changes
+  const { deselectAll, toggleItem } = dataSelection
+
+  const handleSelectionChange = useCallback(
+    (selection: RowSelectionState) => {
+      // Clear current selection before syncing the table's state
+      deselectAll()
+
+      // Add selected items by ID
+      workflowTemplates.forEach((template, index) => {
+        if (selection[index]) {
+          toggleItem(template._id)
+        }
+      })
+
+      log.debug('Table selection changed', {
+        count: Object.keys(selection).length
+      })
+    },
+    [workflowTemplates, deselectAll, toggleItem, log]
+  )
 
   // Handle column reordering
   const handleColumnsReorder = useCallback((reorderedColumns: { key: string; label: string; include: boolean }[]) => {
@@ -265,17 +292,6 @@ export function WorkflowTemplateExporter({ className }: WorkflowTemplateExporter
           <ToolHeaderButton
             category={CONTROL_CATEGORIES.TABLE}
             variant="secondary"
-            icon={<GroupOutlined />}
-            onClick={() => {
-              alert('To group data: Use the built-in table controls below. Click on column headers to sort and filter data.')
-            }}
-          >
-            Group
-          </ToolHeaderButton>
-
-          <ToolHeaderButton
-            category={CONTROL_CATEGORIES.TABLE}
-            variant="secondary"
             icon={<ClearOutlined />}
             onClick={() => {
               alert('To clear filters: Use the built-in table controls below. Reset individual column filters or use the table toolbar.')
@@ -331,17 +347,7 @@ export function WorkflowTemplateExporter({ className }: WorkflowTemplateExporter
         enableRowVirtualization={DEFAULT_VIRTUALIZATION.enableRowVirtualization}
         enableColumnVirtualization={DEFAULT_VIRTUALIZATION.enableColumnVirtualization}
 
-        onSelectionChange={(selection) => {
-          // Clear current selection
-          dataSelection.deselectAll()
-          // Add selected items by ID
-          workflowTemplates.forEach((template, index) => {
-            if (selection[index]) {
-              dataSelection.toggleItem(template._id)
-            }
-          })
-          log.debug('Table selection changed', { count: dataSelection.selectedCount })
-        }}
+        onSelectionChange={handleSelectionChange}
 
         onTableReady={({ table }) => {
           tableRef.current = table

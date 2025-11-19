@@ -142,7 +142,7 @@ class CompaniesService {
    */
   async getCompanies(
     filters?: CompanyFilters,
-    pagination?: { limit?: number; offset?: number; sort?: string; sortOrder?: 'asc' | 'desc' },
+    pagination?: { limit?: number; offset?: number; sort?: string; sortOrder?: 'asc' | 'desc'; select?: string },
     options?: ApiRequestOptions
   ): Promise<PaginatedResponse<Company>> {
     // Ensure tenant slug is set before making API calls
@@ -154,6 +154,7 @@ class CompaniesService {
         offset: pagination?.offset ?? 0,
         sort: pagination?.sort ?? 'name',
         sortOrder: pagination?.sortOrder,
+        ...(pagination?.select && { select: pagination.select }),
         ...filters
       }
 

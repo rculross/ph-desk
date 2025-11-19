@@ -150,14 +150,14 @@ export function useSharedExporter<
   const fieldsControl = useToggleControl(false)
   const reorderControl = useToggleControl(false)
   const formatControl = useFormatControl<ExportFormat>(
-    initialFormat ?? availableFormats[0] ?? 'csv',
+    initialFormat, // undefined by default - no format selected initially
     availableFormats
   )
 
   const exportConfig = useMemo<ExportConfigState<TExportConfig>>(
     () => ({
       ...defaultExportConfig,
-      format: formatControl.selectedFormat
+      format: formatControl.selectedFormat ?? 'csv' // Default to csv if no format selected
     }),
     [defaultExportConfig, formatControl.selectedFormat]
   )

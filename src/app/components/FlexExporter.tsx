@@ -125,12 +125,13 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
   const tenantSlug = activeTenant?.slug ?? getTenantSlug()
 
 
-  // Field detection for export
+  // Field detection disabled - FlexExporter is a generic pass-through tool
+  // that doesn't know entity types. Export works directly from response data.
   const fieldDetection = useFieldDetection({
-    entityType: 'custom',
-    sampleData: Array.isArray(responseData) ? responseData.slice(0, 10) : responseData ? [responseData] : [],
+    entityType: 'issue', // Placeholder only (not used when disabled)
+    sampleData: [],
     tenantSlug: tenantSlug ?? undefined,
-    enabled: !isMinimal && !!responseData
+    enabled: false // Disabled to prevent invalid API calls with unknown entity types
   })
 
   // Log component mount
@@ -362,7 +363,10 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
     try {
       // Prepare data for export
       const exportData = Array.isArray(responseData) ? responseData : [responseData]
-      const filename = `flex_export_${endpoint.replace(/[^a-zA-Z0-9]/g, '_')}_${formatDate(new Date(), 'yyyy-MM-dd')}`
+      const now = new Date()
+      const dateStr = formatDate(now, 'yyyy-MM-dd')
+      const timeStr = formatDate(now, 'HH-mm')
+      const filename = `${tenantSlug || 'unknown'}_flex_export_${endpoint.replace(/[^a-zA-Z0-9]/g, '_')}_${dateStr}_${timeStr}`
 
       log.info('Starting flex export', {
         endpoint,

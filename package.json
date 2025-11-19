@@ -1,6 +1,6 @@
 {
   "name": "ph-desk",
-  "version": "4.1.24",
+  "version": "4.1.44",
   "description": "Advanced desktop application providing intelligent tools and automation for Planhat platform users",
   "main": "electron/main.cjs",
   "type": "module",

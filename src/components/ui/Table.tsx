@@ -40,6 +40,10 @@ export interface TableProps<TData> extends Omit<UseTableCoreOptions<TData>, 'col
   entityType?: EntityType
   customColumns?: ColumnDef<TData>[]
 
+  // Lookup maps for resolving IDs to names
+  companyLookup?: Record<string, string>
+  userLookup?: Record<string, string>
+
   // Persistence - enables column widths, order, and visibility persistence per tenant
   tenantSlug?: string          // Required for tenant-specific persistence
   enablePersistence?: boolean  // Master switch (default: true when tenantSlug provided)
@@ -97,6 +101,8 @@ export function Table<TData>({
   fieldMappings = [],
   entityType = 'issue',
   customColumns,
+  companyLookup = {},
+  userLookup = {},
 
   tenantSlug,
   enablePersistence = true,
@@ -172,7 +178,7 @@ export function Table<TData>({
     if (customColumns) {
       cols = customColumns
     } else if (fieldMappings.length > 0) {
-      cols = createColumnsFromFields<TData>(fieldMappings, entityType, customColumnSizing)
+      cols = createColumnsFromFields<TData>(fieldMappings, entityType, customColumnSizing, companyLookup, userLookup)
     }
 
     // Add selection column if enabled
@@ -181,7 +187,15 @@ export function Table<TData>({
     }
 
     return cols
-  }, [customColumns, fieldMappings, entityType, customColumnSizing, enableSelection])
+  }, [
+    customColumns,
+    fieldMappings,
+    entityType,
+    customColumnSizing,
+    enableSelection,
+    companyLookup,
+    userLookup
+  ])
 
   // Initialize column order from initial props or column definitions
   const initialOrder = useMemo(() => {
@@ -237,7 +251,7 @@ export function Table<TData>({
 
     globalFilterFn,
 
-    persistColumnSizes: persistColumnSizes && persistenceEnabled,
+    persistColumnSizes: persistenceEnabled,
     persistenceContext: persistenceContext || (entityType ? `table-${entityType}` : 'table'),
     persistColumnOrder: persistenceEnabled,
     persistColumnVisibility: persistenceEnabled,

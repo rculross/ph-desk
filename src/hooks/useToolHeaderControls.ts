@@ -155,17 +155,19 @@ export function useBadgeControl<T>(
  * Type-safe format selection with validation and change callbacks.
  * Optimized for Radio.Group components with consistent styling.
  *
- * @param initialFormat - Initial selected format
+ * @param initialFormat - Initial selected format (undefined for no selection)
  * @param availableFormats - Array of valid format options
  * @param onChange - Optional callback when format changes
  * @returns Format state and control functions with memoized radio props
  */
 export function useFormatControl<T extends string>(
-  initialFormat: T,
+  initialFormat: T | undefined,
   availableFormats: readonly T[],
   onChange?: (format: T) => void
 ) {
-  const [selectedFormat, setSelectedFormat] = useState<T>(() => {
+  const [selectedFormat, setSelectedFormat] = useState<T | undefined>(() => {
+    // If no initial format, return undefined (no selection)
+    if (initialFormat === undefined) return undefined
     // Validate initial format is available
     return availableFormats.includes(initialFormat) ? initialFormat : availableFormats[0] as T
   })
@@ -197,7 +199,7 @@ export function useFormatControl<T extends string>(
     setSelectedFormat,
     availableFormats,
     radioGroupProps
-  } as const
+  }
 }
 
 /**

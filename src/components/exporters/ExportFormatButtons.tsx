@@ -1,4 +1,4 @@
-import { Button } from 'antd'
+import { Button, Space } from 'antd'
 import type { ButtonProps } from 'antd'
 
 import { EXPORT_FORMAT_OPTIONS, type ExportFormat } from '../../types/ui'
@@ -21,7 +21,7 @@ export function ExportFormatButtons({
   className
 }: ExportFormatButtonsProps) {
   return (
-    <Button.Group className={className}>
+    <Space.Compact className={className}>
       {EXPORT_FORMAT_OPTIONS.map(option => {
         const isSelected = selectedFormat === option.value
 
@@ -39,7 +39,7 @@ export function ExportFormatButtons({
           </Button>
         )
       })}
-    </Button.Group>
+    </Space.Compact>
   )
 }
 

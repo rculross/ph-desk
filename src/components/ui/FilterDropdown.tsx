@@ -48,7 +48,7 @@ export function FilterDropdown<TData>({
     setOpen(newOpen)
   }
 
-  const dropdownRender = () => (
+  const popupRender = () => (
     <div className="bg-white rounded-lg shadow-lg border border-gray-200 min-w-[200px] max-w-[400px]">
       <ColumnFilter
         column={column}
@@ -66,7 +66,7 @@ export function FilterDropdown<TData>({
       onOpenChange={handleOpenChange}
       trigger={['click']}
       placement={placement}
-      dropdownRender={dropdownRender}
+      popupRender={popupRender}
       // Prevent dropdown from closing when clicking inside
       overlayStyle={{ zIndex: 1050 }}
     >

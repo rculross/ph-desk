@@ -24,6 +24,7 @@ import { AlertCircleIcon } from 'lucide-react'
 
 import { getTenantSlug } from '../../api/client/http-client'
 import { issuesService } from '../../api/services/issues.service'
+import { useUsersQuery } from '../../api/queries/users.queries'
 import { ExportFormatButtons, useSharedExporter } from '../../components/exporters'
 import { FieldsDropdownWrapper } from '../../components/ui/FieldsDropdown'
 import { OrderColumnsModal } from '../../components/ui/OrderColumnsModal'
@@ -78,13 +79,22 @@ export function IssueExporter({ className }: IssueExporterProps) {
   // Pagination state for incremental loading
   const [pagination, setPagination] = useState({
     currentOffset: 0,
-    recordsPerPull: 500, // Smaller batches for better UX
+    recordsPerPull: 2000, // Larger batches for more efficient loading
     totalLoaded: 0,
     hasMore: false
   })
 
   // All loaded issues (accumulated across pages)
   const [allIssues, setAllIssues] = useState<Issue[]>([])
+
+  // Lookup maps for resolving IDs to names
+  const [companyLookup, setCompanyLookup] = useState<Record<string, string>>({})
+  const [userLookup, setUserLookup] = useState<Record<string, string>>({})
+
+  const usersQuery = useUsersQuery({
+    pagination: { limit: 5000 },
+    enabled: true
+  })
 
   // Dynamic field detection hook with tenant-aware custom fields
   const tenantSlug = getTenantSlug()
@@ -168,7 +178,93 @@ export function IssueExporter({ className }: IssueExporterProps) {
     }
   }, [issuesData])
 
+  // Build company lookup from issue payloads (names are included in response)
+  useEffect(() => {
+    if (allIssues.length === 0) {
+      return
+    }
+
+    const derivedLookup: Record<string, string> = {}
+
+    allIssues.forEach(issue => {
+      issue.companies?.forEach(company => {
+        if (company?.id && company.name) {
+          derivedLookup[company.id] = company.name
+        }
+      })
+
+      if (issue.company && issue.company._id && issue.company.name) {
+        derivedLookup[issue.company._id] = issue.company.name
+      }
+
+      if (Array.isArray(issue.companyMatchingValue)) {
+        issue.companyMatchingValue.forEach((entry: any) => {
+          const companyId = entry?.id ?? entry?._id
+          const companyName = entry?.name ?? entry?.label
+          if (companyId && companyName) {
+            derivedLookup[companyId] = companyName
+          }
+        })
+      }
+
+      if (issue.companyIds && Array.isArray(issue.companyIds) && issue.company && issue.company.name) {
+        issue.companyIds.forEach(companyId => {
+          if (companyId && !derivedLookup[companyId]) {
+            derivedLookup[companyId] = issue.company?.name ?? companyId
+          }
+        })
+      }
+    })
+
+    if (Object.keys(derivedLookup).length === 0) {
+      return
+    }
+
+    setCompanyLookup(prev => {
+      const next = { ...prev }
+      let changed = false
+
+      Object.entries(derivedLookup).forEach(([id, name]) => {
+        if (!next[id] || next[id] !== name) {
+          next[id] = name
+          changed = true
+        }
+      })
+
+      return changed ? next : prev
+    })
+
+    log.debug('Updated company lookup from issue payloads', {
+      companyCount: Object.keys(derivedLookup).length
+    })
+  }, [allIssues, log])
+
+  // Build user lookup once users are fetched via React Query
+  useEffect(() => {
+    if (!usersQuery.data?.data?.length) {
+      return
+    }
+
+    const lookup = usersQuery.data.data.reduce<Record<string, string>>((acc, user) => {
+      if (!user._id) {
+        return acc
+      }
+
+      const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ').trim()
+      acc[user._id] = fullName || user.email || user._id
+      return acc
+    }, {})
+
+    setUserLookup(lookup)
+
+    log.debug('Updated user lookup from users query', {
+      userCount: Object.keys(lookup).length
+    })
+  }, [usersQuery.data, log])
+
+  // Use all loaded issues directly (no client-side date filtering)
   const issues = allIssues
+
   const totalCount = pagination.totalLoaded
 
   // Load more functionality
@@ -196,7 +292,7 @@ export function IssueExporter({ className }: IssueExporterProps) {
     // Reset pagination to first page
     setPagination({
       currentOffset: 0,
-      recordsPerPull: 500,
+      recordsPerPull: 2000,
       totalLoaded: 0,
       hasMore: false
     })
@@ -224,7 +320,12 @@ export function IssueExporter({ className }: IssueExporterProps) {
     totalCount,
     tenantSlug: tenantSlug ?? undefined,
     defaultExportConfig: exportDefaults,
-    buildFilename: format => `issues_export_${formatDate(new Date(), 'yyyy-MM-dd')}`,
+    buildFilename: format => {
+      const now = new Date()
+      const dateStr = formatDate(now, 'yyyy-MM-dd')
+      const timeStr = formatDate(now, 'HH-mm')
+      return `${tenantSlug || 'unknown'}_issues_export_${dateStr}_${timeStr}`
+    },
     streaming: {
       threshold: 5000,
       createRequest: context => ({
@@ -333,15 +434,11 @@ export function IssueExporter({ className }: IssueExporterProps) {
 
   // PERFORMANCE OPTIMIZATION: Memoize fieldMappings calculation separately for tenant-aware caching
   const optimizedFieldMappings = useMemo(() => {
-    // Only recalculate when field detection is stable and we have meaningful data
-    if (fieldDetection.isLoading || fieldDetection.fieldMappings.length === 0) {
-      return []
-    }
-
     // Get included fields (already filtered by the field detection hook)
     const includedFields = fieldDetection.includedFields
 
     // If no fields are included but we have issues, provide basic default fields
+    // This ensures the table always has columns to display when data is available
     if (includedFields.length === 0 && issues.length > 0) {
       // Create basic fields from the first issue
       const firstIssue = issues[0] as any
@@ -377,6 +474,11 @@ export function IssueExporter({ className }: IssueExporterProps) {
       return basicFields
     }
 
+    // If no issues or no field mappings yet, return empty
+    if (issues.length === 0 || fieldDetection.fieldMappings.length === 0) {
+      return []
+    }
+
     // Return the normal included fields
     return includedFields.map(field => ({
       key: field.key,
@@ -386,7 +488,7 @@ export function IssueExporter({ className }: IssueExporterProps) {
       source: field.key.startsWith('custom.') ? 'custom' as const : 'standard' as const,
       customFieldConfig: field.customFieldConfig
     }))
-  }, [fieldDetection.includedFields, fieldDetection.isLoading, issues.length > 0])
+  }, [fieldDetection.includedFields, fieldDetection.fieldMappings.length, issues.length > 0])
 
   // Use dynamic field detection results
   // Table columns are now handled by the Table component internally
@@ -549,6 +651,8 @@ export function IssueExporter({ className }: IssueExporterProps) {
         fieldMappings={optimizedFieldMappings}
         entityType="issue"
         tenantSlug={tenantSlug ?? undefined}
+        companyLookup={companyLookup}
+        userLookup={userLookup}
         enablePersistence={true}
         persistColumnSizes={true}
         loading={isLoading && !isLoadingAllData}

@@ -530,7 +530,7 @@ export function DataTable<TData>({
                           key={header.id}
                           data-index={virtualColumn.index}
                           className={clsx(
-                            'absolute top-0 flex h-full items-center border-r border-gray-300 bg-gray-50 text-left font-medium text-gray-700',
+                            'absolute top-0 flex h-full items-center border-r border-gray-300 bg-gray-50 text-left text-sm font-medium text-gray-700',
                             'group',
                             enableColumnResizing && 'select-none',
                             enableColumnDragging && draggedColumnId === header.id && 'opacity-50',
@@ -589,7 +589,7 @@ export function DataTable<TData>({
                               <div
                                 key={cell.id}
                                 data-index={virtualColumn.index}
-                                className="absolute flex items-center border-r border-gray-200 px-4 text-sm text-gray-900 overflow-hidden"
+                                className="absolute flex items-center border-r border-gray-200 px-4 py-2 text-sm text-gray-900 overflow-hidden"
                                 ref={getBodyMeasurementRef(virtualColumn.index)}
                                 style={{
                                   left: `${virtualColumn.start}px`,
@@ -630,7 +630,7 @@ export function DataTable<TData>({
                           <div
                             key={cell.id}
                             data-index={virtualColumn.index}
-                            className="absolute flex items-center border-r border-gray-200 px-4 text-sm text-gray-900"
+                            className="absolute flex items-center border-r border-gray-200 px-4 py-2 text-sm text-gray-900"
                             ref={getBodyMeasurementRef(virtualColumn.index)}
                             style={{
                               left: `${virtualColumn.start}px`,
@@ -664,7 +664,7 @@ export function DataTable<TData>({
                       <div
                         key={header.id}
                         className={clsx(
-                          'relative border-b border-gray-200 bg-gray-50 py-3 text-left font-medium text-gray-700 group',
+                          'relative border-b border-gray-200 bg-gray-50 py-3 text-left text-sm font-medium text-gray-700 group',
                           enableColumnResizing && 'select-none',
                           enableColumnDragging && draggedColumnId === header.id && 'opacity-50',
                           enableColumnDragging && dragOverColumnId === header.id && 'bg-blue-100 border-blue-300',

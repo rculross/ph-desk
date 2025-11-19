@@ -28,6 +28,7 @@ export interface RolePermission {
   module: string
   category?: string
   permissions: {
+    // Model permissions (m_*)
     create?: boolean
     read?: boolean
     view?: boolean // Legacy: maps to read
@@ -35,6 +36,8 @@ export interface RolePermission {
     delete?: boolean
     remove?: boolean // Legacy: maps to delete
     export?: boolean
+    // Workflow permissions (wf_*)
+    enabled?: boolean
   }
   subPermissions?: RolePermission[]
   accountAccess?: boolean
@@ -118,7 +121,7 @@ class PermissionsService {
     log.debug('Fetching role permissions via HTTP client', queryParams)
 
     try {
-      const data = await this.httpClient.get<RolePermission[]>(
+      const data = await this.httpClient.get<any[]>(
         '/rolespermissions',
         queryParams,
         {
@@ -129,7 +132,65 @@ class PermissionsService {
         }
       )
 
-      return data ?? []
+      log.debug('Raw role permissions response', {
+        dataLength: data?.length ?? 0,
+        sampleData: data?.[0]
+      })
+
+      // Transform API response to RolePermission format
+      const transformed: RolePermission[] = []
+
+      if (!data || data.length === 0) {
+        log.warn('No role permissions data received from API')
+        return []
+      }
+
+      // The API returns role objects with role_permissions arrays
+      for (const role of data) {
+        const rolePerms = role.role_permissions || []
+        const roleId = role._id
+        const roleName = role.name
+
+        for (const perm of rolePerms) {
+          // Map type to human-readable category
+          let category = 'Other'
+          if (perm.type === 'company') {
+            category = 'Account Access'
+          } else if (perm.type === 'phmodel') {
+            category = 'Module'
+          } else if (perm.type === 'workflow') {
+            category = 'Workflow'
+          }
+
+          // Transform from API format (subject, action) to our format (module, permissions)
+          transformed.push({
+            _id: perm._id || `${roleId}_${perm.subject}`,
+            roleId: roleId,
+            roleName: roleName,
+            module: perm.title || perm.subject, // Use human-readable title, fallback to subject
+            category: category, // Map type to category
+            permissions: {
+              // Model permissions
+              create: perm.action?.create,
+              view: perm.action?.view,
+              read: perm.action?.view, // Alias
+              update: perm.action?.update,
+              remove: perm.action?.remove,
+              delete: perm.action?.remove, // Alias
+              export: perm.action?.export,
+              // Workflow permissions
+              enabled: perm.action?.enabled
+            }
+          })
+        }
+      }
+
+      log.debug('Transformed role permissions', {
+        transformedCount: transformed.length,
+        sampleTransformed: transformed[0]
+      })
+
+      return transformed
     } catch (error) {
       log.error('Failed to fetch role permissions:', error)
       throw error

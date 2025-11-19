@@ -126,7 +126,7 @@ export function TableToolbar<TData>({
         {enableGrouping && (
           <Dropdown
             trigger={['click']}
-            dropdownRender={() => (
+            popupRender={() => (
               <div className="p-3 min-w-[200px] bg-white rounded-lg shadow-lg border border-gray-200">
                 <div className="flex justify-between items-center mb-2">
                   <Text strong>Group By</Text>
@@ -226,7 +226,7 @@ export function TableToolbar<TData>({
         {enableColumnVisibility && table && (
           <Dropdown
             trigger={['click']}
-            dropdownRender={() => (
+            popupRender={() => (
               <div className="p-3 min-w-[200px] bg-white rounded-lg shadow-lg border border-gray-200">
                 <div className="flex justify-between items-center mb-2">
                   <Text strong>Show Columns</Text>

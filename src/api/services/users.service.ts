@@ -81,7 +81,7 @@ class UsersService {
    */
   async getUsers(
     filters?: UserFilters,
-    pagination?: { limit?: number; offset?: number; sort?: string; sortOrder?: 'asc' | 'desc' },
+    pagination?: { limit?: number; offset?: number; sort?: string; sortOrder?: 'asc' | 'desc'; select?: string },
     options?: ApiRequestOptions
   ): Promise<PaginatedResponse<ConnectedApiUser>> {
     await this.ensureTenantSlug()
@@ -93,7 +93,7 @@ class UsersService {
         offset: pagination?.offset ?? 0,
         sort: pagination?.sort ?? 'firstName',
         sortOrder: pagination?.sortOrder,
-        select: 'firstName,lastName,email,teamId,isActive,googleApi,googleCalendar,msApi,msCalendarApi,isExposedAsSenderOption,createdAt,updatedAt,lastLoginDate',
+        select: pagination?.select ?? 'firstName,lastName,email,teamId,isActive,googleApi,googleCalendar,msApi,msCalendarApi,isExposedAsSenderOption,createdAt,updatedAt,lastLoginDate',
         populate: 'team',
         ...filters
       }

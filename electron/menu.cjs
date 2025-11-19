@@ -109,7 +109,18 @@ function createMenu() {
         { role: 'copy' },
         { role: 'paste' },
         { type: 'separator' },
-        { role: 'selectAll' }
+        { role: 'selectAll' },
+        { type: 'separator' },
+        {
+          label: 'Find',
+          accelerator: 'CmdOrCtrl+F',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              // Trigger find in page - opens native Chromium find bar
+              mainWindow.webContents.send('menu:find-in-page');
+            }
+          }
+        }
       ]
     },
 

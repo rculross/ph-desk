@@ -233,7 +233,7 @@ export function OrderColumnsModal({
         </Button>
       ]}
       width={width}
-      destroyOnClose
+      destroyOnHidden
       maskClosable={!loading}
       closable={!loading}
       centered

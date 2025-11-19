@@ -32,13 +32,26 @@ async function loadXLSXLibrary() {
  */
 export async function generatePermissionsExcel(
   roles: Role[],
-  rolePermissions: RolePermission[]
+  rolePermissions: RolePermission[],
+  users: any[] = []
 ): Promise<ArrayBuffer> {
   const { XLSXUtils: utils, writeXLSX: write } = await loadXLSXLibrary()
 
   log.debug('Generating permissions Excel export', {
     roleCount: roles.length,
-    permissionCount: rolePermissions.length
+    permissionCount: rolePermissions.length,
+    userCount: users.length,
+    sampleRole: roles[0],
+    samplePermission: rolePermissions[0]
+  })
+
+  // Count active users per role
+  const userCountByRole: Record<string, number> = {}
+  users.forEach(user => {
+    if (user.isActive && user.role?._id) {
+      const roleId = user.role._id
+      userCountByRole[roleId] = (userCountByRole[roleId] || 0) + 1
+    }
   })
 
   // Create new workbook
@@ -46,60 +59,196 @@ export async function generatePermissionsExcel(
 
   // ===== SHEET 1: Roles Overview =====
   const overviewData = [
-    ['Roles Overview', '', ''], // Title row
-    ['', '', ''], // Blank row
-    ['Role Name', 'Description', 'External'] // Header row
+    ['Roles Overview', '', '', ''], // Title row
+    ['', '', '', ''], // Blank row
+    ['Role Name', 'Description', 'External', 'Total Users'] // Header row
   ]
 
   // Add role data
   roles.forEach(role => {
+    const userCount = userCountByRole[role._id] || 0
     overviewData.push([
       role.name ?? '',
       role.description ?? '',
-      role.external ? 'Yes' : 'No'
+      role.external ? 'Yes' : null,
+      userCount
     ])
   })
 
   const overviewSheet = utils.aoa_to_sheet(overviewData)
 
+  // Add hyperlinks to role names (starting from row 4, which is row index 3)
+  roles.forEach((role, index) => {
+    const rowNum = index + 4 // +3 for header rows, +1 for 1-based indexing
+    const cellRef = `A${rowNum}`
+    const sheetName = role.name.substring(0, 31).replace(/[:\\/\[\]*?]/g, '_')
+
+    // Add hyperlink
+    if (!overviewSheet[cellRef]) {
+      overviewSheet[cellRef] = {}
+    }
+    overviewSheet[cellRef].l = {
+      Target: `#'${sheetName}'!A1`,
+      Tooltip: `View ${role.name} permissions`
+    }
+    // Ensure the cell has the text value
+    overviewSheet[cellRef].v = role.name ?? ''
+    overviewSheet[cellRef].t = 's' // String type
+  })
+
   // Set column widths for overview sheet
   overviewSheet['!cols'] = [
     { wch: 30 }, // Role Name
     { wch: 50 }, // Description
-    { wch: 10 }  // External
+    { wch: 10 }, // External
+    { wch: 12 }  // Total Users
   ]
 
   utils.book_append_sheet(workbook, overviewSheet, 'Roles Overview')
 
-  // ===== SHEET 2+: Individual Role Sheets =====
+  // ===== SHEET 2: Permissions Comparison =====
+  // Create a matrix showing all permissions across all roles
+  const comparisonData: any[][] = [
+    ['Permissions Comparison - All Roles'], // Title
+    [], // Blank row
+  ]
+
+  // Build header row: Permission Name | Category | Role1 | Role2 | Role3...
+  const headerRow = ['Permission Name', 'Category', ...roles.map(r => r.name ?? '')]
+  comparisonData.push(headerRow)
+
+  // Get all unique permissions across all roles
+  const allPermissions = new Map<string, { name: string; category: string }>()
+  rolePermissions.forEach(perm => {
+    const key = perm.module ?? ''
+    if (!allPermissions.has(key)) {
+      allPermissions.set(key, {
+        name: perm.module ?? '',
+        category: perm.category ?? ''
+      })
+    }
+  })
+
+  // Sort permissions by category, then by name
+  const sortedPermissions = Array.from(allPermissions.values()).sort((a, b) => {
+    if (a.category !== b.category) {
+      return a.category.localeCompare(b.category)
+    }
+    return a.name.localeCompare(b.name)
+  })
+
+  // Build comparison matrix
+  sortedPermissions.forEach(perm => {
+    const row: any[] = [perm.name, perm.category]
+
+    // For each role, check if they have this permission and what level
+    roles.forEach(role => {
+      const rolePerms = rolePermissions.filter(
+        p => (p.roleId === role._id || p.roleName === role.name) && p.module === perm.name
+      )
+
+      if (rolePerms.length === 0) {
+        row.push(null) // No permission
+      } else {
+        const permissions = rolePerms[0].permissions || {}
+        const isWorkflow = perm.category === 'Workflow'
+
+        if (isWorkflow) {
+          // Workflow: just Yes or blank
+          row.push(permissions.enabled ? 'Yes' : null)
+        } else {
+          // Model: Show CRUD code (e.g., "CRUDE" for all permissions)
+          let code = ''
+          if (permissions.create) code += 'C'
+          if (permissions.read || permissions.view) code += 'R'
+          if (permissions.update) code += 'U'
+          if (permissions.delete || permissions.remove) code += 'D'
+          if (permissions.export) code += 'E'
+          row.push(code || null)
+        }
+      }
+    })
+
+    comparisonData.push(row)
+  })
+
+  const comparisonSheet = utils.aoa_to_sheet(comparisonData)
+
+  // Set column widths for comparison sheet
+  const comparisonCols = [
+    { wch: 35 }, // Permission Name
+    { wch: 15 }, // Category
+    ...roles.map(() => ({ wch: 12 })) // Each role column
+  ]
+  comparisonSheet['!cols'] = comparisonCols
+
+  // Freeze panes: freeze first 2 columns and first 3 rows
+  comparisonSheet['!freeze'] = { xSplit: 2, ySplit: 3 }
+
+  utils.book_append_sheet(workbook, comparisonSheet, 'Comparison')
+
+  // ===== SHEET 3+: Individual Role Sheets =====
   roles.forEach(role => {
     // Get permissions for this role
     const rolesPermissions = rolePermissions.filter(
       p => p.roleId === role._id || p.roleName === role.name
     )
 
+    // Find the active Account Access permission (mutually exclusive, only one should be enabled)
+    const accountAccessPerm = rolesPermissions.find(
+      p => p.category === 'Account Access' && p.permissions?.enabled
+    )
+    const accountAccessName = accountAccessPerm?.module || 'None'
+
+    // Filter out Account Access permissions from the main table
+    const nonAccountAccessPerms = rolesPermissions.filter(
+      p => p.category !== 'Account Access'
+    )
+
     // Build permission data for this role
     const roleSheetData: any[][] = [
       [role.name], // Title row with role name
       ['Description:', role.description ?? ''], // Description
-      ['External:', role.external ? 'Yes' : 'No'], // External flag
+      ['External:', role.external ? 'Yes' : null], // External flag
+      ['Account Access:', accountAccessName], // Account Access (mutually exclusive)
       [], // Blank row
-      ['Module/Permission', 'Category', 'Create', 'Read', 'Update', 'Delete', 'Export'] // Header row
+      ['Permission Name', 'Category', 'Create', 'Read', 'Update', 'Delete', 'Export'] // Header row
     ]
 
-    // Add permissions
-    rolesPermissions.forEach(permission => {
-      // Map legacy API fields: view -> read, remove -> delete
+    // Add permissions (excluding Account Access which is in the header)
+    nonAccountAccessPerms.forEach(permission => {
       const perms = permission.permissions || {}
-      const create = perms.create ? '✓' : '✗'
-      const read = (perms.read || perms.view) ? '✓' : '✗'
-      const update = perms.update ? '✓' : '✗'
-      const deleteVal = (perms.delete || perms.remove) ? '✓' : '✗'
-      const exportVal = perms.export ? '✓' : '✗'
+      const moduleName = permission.module ?? ''
+      const category = permission.category ?? ''
+      const isWorkflow = category === 'Workflow'
+
+      // Workflow permissions: only Create column based on enabled flag
+      // Model permissions: standard CRUD columns
+      let create: string | null
+      let read: string | null
+      let update: string | null
+      let deleteVal: string | null
+      let exportVal: string | null
+
+      if (isWorkflow) {
+        // Workflow permission: Create = enabled, all others null
+        create = perms.enabled ? 'Yes' : null
+        read = null
+        update = null
+        deleteVal = null
+        exportVal = null
+      } else {
+        // Model permission: Map legacy API fields: view -> read, remove -> delete
+        create = perms.create ? 'Yes' : null
+        read = (perms.read || perms.view) ? 'Yes' : null
+        update = perms.update ? 'Yes' : null
+        deleteVal = (perms.delete || perms.remove) ? 'Yes' : null
+        exportVal = perms.export ? 'Yes' : null
+      }
 
       roleSheetData.push([
-        permission.module ?? '',
-        permission.category ?? '',
+        moduleName,
+        category,
         create,
         read,
         update,
@@ -111,15 +260,35 @@ export async function generatePermissionsExcel(
       if (permission.subPermissions && permission.subPermissions.length > 0) {
         permission.subPermissions.forEach(subPerm => {
           const subPerms = subPerm.permissions || {}
-          const subCreate = subPerms.create ? '✓' : '✗'
-          const subRead = (subPerms.read || subPerms.view) ? '✓' : '✗'
-          const subUpdate = subPerms.update ? '✓' : '✗'
-          const subDelete = (subPerms.delete || subPerms.remove) ? '✓' : '✗'
-          const subExport = subPerms.export ? '✓' : '✗'
+          const subModuleName = subPerm.module ?? ''
+          const subCategory = subPerm.category ?? ''
+          const subIsWorkflow = subCategory === 'Workflow'
+
+          let subCreate: string | null
+          let subRead: string | null
+          let subUpdate: string | null
+          let subDelete: string | null
+          let subExport: string | null
+
+          if (subIsWorkflow) {
+            // Workflow sub-permission: Create = enabled, all others null
+            subCreate = subPerms.enabled ? 'Yes' : null
+            subRead = null
+            subUpdate = null
+            subDelete = null
+            subExport = null
+          } else {
+            // Model sub-permission: standard CRUD
+            subCreate = subPerms.create ? 'Yes' : null
+            subRead = (subPerms.read || subPerms.view) ? 'Yes' : null
+            subUpdate = subPerms.update ? 'Yes' : null
+            subDelete = (subPerms.delete || subPerms.remove) ? 'Yes' : null
+            subExport = subPerms.export ? 'Yes' : null
+          }
 
           roleSheetData.push([
-            `  ${subPerm.module ?? ''}`, // Indented with spaces
-            subPerm.category ?? '',
+            `  ${subModuleName}`, // Indented with spaces
+            subCategory,
             subCreate,
             subRead,
             subUpdate,
@@ -130,25 +299,8 @@ export async function generatePermissionsExcel(
       }
     })
 
-    // Handle account access permissions (special highlighting if needed)
-    const accountPerms = rolesPermissions.filter(p =>
-      p.module && p.module.startsWith('c_accounts_')
-    )
-    if (accountPerms.length > 0) {
-      roleSheetData.push([]) // Blank row
-      roleSheetData.push(['Account Access Permissions', '', '', '', '', '', ''])
-      accountPerms.forEach(perm => {
-        roleSheetData.push([
-          perm.module ?? '',
-          perm.category ?? '',
-          perm.permissions?.create ? '✓' : '✗',
-          (perm.permissions?.read || perm.permissions?.view) ? '✓' : '✗',
-          perm.permissions?.update ? '✓' : '✗',
-          (perm.permissions?.delete || perm.permissions?.remove) ? '✓' : '✗',
-          perm.permissions?.export ? '✓' : '✗'
-        ])
-      })
-    }
+    // Account access permissions are already included in the main list
+    // No need for a separate section since they're categorized as "Account Access"
 
     // Create worksheet from data
     const roleSheet = utils.aoa_to_sheet(roleSheetData)
@@ -202,18 +354,45 @@ export function generatePermissionsFlatData(
 
     rolePerms.forEach(permission => {
       const perms = permission.permissions || {}
+      const moduleName = permission.module ?? ''
+      const category = permission.category ?? ''
+      const isWorkflow = category === 'Workflow'
+
+      // Workflow permissions: only Create column based on enabled flag
+      // Model permissions: standard CRUD columns
+      let create: string | null
+      let read: string | null
+      let update: string | null
+      let deleteVal: string | null
+      let exportVal: string | null
+
+      if (isWorkflow) {
+        // Workflow permission: Create = enabled, all others null
+        create = perms.enabled ? 'Yes' : null
+        read = null
+        update = null
+        deleteVal = null
+        exportVal = null
+      } else {
+        // Model permission: standard CRUD
+        create = perms.create ? 'Yes' : null
+        read = (perms.read || perms.view) ? 'Yes' : null
+        update = perms.update ? 'Yes' : null
+        deleteVal = (perms.delete || perms.remove) ? 'Yes' : null
+        exportVal = perms.export ? 'Yes' : null
+      }
 
       flatData.push({
         'Role Name': role.name ?? '',
         'Role Description': role.description ?? '',
-        'External': role.external ? 'Yes' : 'No',
-        'Module': permission.module ?? '',
-        'Category': permission.category ?? '',
-        'Create': perms.create ? 'Yes' : 'No',
-        'Read': (perms.read || perms.view) ? 'Yes' : 'No',
-        'Update': perms.update ? 'Yes' : 'No',
-        'Delete': (perms.delete || perms.remove) ? 'Yes' : 'No',
-        'Export': perms.export ? 'Yes' : 'No'
+        'External': role.external ? 'Yes' : null,
+        'Permission Name': moduleName,
+        'Category': category,
+        'Create': create,
+        'Read': read,
+        'Update': update,
+        'Delete': deleteVal,
+        'Export': exportVal
       })
     })
   })

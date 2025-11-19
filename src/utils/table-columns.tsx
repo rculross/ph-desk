@@ -25,6 +25,7 @@ import {
 import { Badge, Tag, Tooltip, Typography } from 'antd'
 
 import { useUserName } from '../api/queries/users.queries'
+import { TruncatedCell } from '../components/ui/TruncatedCell'
 import type { EntityType } from '../types/api'
 import type { FieldMapping } from '../types/export'
 import type {
@@ -296,7 +297,13 @@ function isRichTextField(fieldKey: string, fieldType: string): boolean {
 /**
  * Create cell renderer for a field type
  */
-function createCellRenderer(fieldKey: string, fieldType: string, customFieldConfig?: any) {
+function createCellRenderer(
+  fieldKey: string,
+  fieldType: string,
+  customFieldConfig?: any,
+  companyLookup: Record<string, string> = {},
+  userLookup: Record<string, string> = {}
+) {
   if (fieldType === 'date') {
     return ({ getValue }: { getValue: () => string | Date | null | undefined }) => {
       const value = getValue()
@@ -322,7 +329,61 @@ function createCellRenderer(fieldKey: string, fieldType: string, customFieldConf
   if (fieldType === 'array') {
     return ({ getValue }: { getValue: () => any[] | null | undefined }) => {
       const value = getValue()
-      return formatArray(value)
+
+      // Handle empty/null arrays
+      if (!Array.isArray(value) || value.length === 0) {
+        return ''
+      }
+
+      // Check if this is an ID array that needs resolution
+      const isCompanyIdArray = fieldKey.toLowerCase().includes('companyid') ||
+                               fieldKey.toLowerCase() === 'companies'
+      const isUserIdArray = fieldKey.toLowerCase().includes('userid') ||
+                            fieldKey.toLowerCase().includes('assignee') ||
+                            fieldKey.toLowerCase().includes('reporter') ||
+                            fieldKey.toLowerCase().includes('requestor')
+
+      // For ID arrays, resolve to names using lookup maps
+      if (isCompanyIdArray || isUserIdArray) {
+        const lookup = isCompanyIdArray ? companyLookup : userLookup
+        const displayCount = 2 // Show first 2 items
+        const visibleItems = value.slice(0, displayCount)
+        const remainingCount = value.length - displayCount
+
+        // Resolve IDs to names
+        const resolvedNames = visibleItems.map(id => lookup[String(id)] || String(id))
+        const displayText = resolvedNames.join(', ')
+
+        // Create full text for tooltip with all names
+        const allNames = value.map(id => lookup[String(id)] || String(id))
+        const fullText = allNames.join(', ')
+
+        return (
+          <Tooltip title={fullText}>
+            <span>
+              {displayText}
+              {remainingCount > 0 ? ` ... and ${remainingCount} more` : ''}
+            </span>
+          </Tooltip>
+        )
+      }
+
+      // For regular arrays, show truncated text with tooltip
+      const displayCount = 3
+      const displayText = value.slice(0, displayCount)
+        .map(item => String(item))
+        .join(', ')
+      const fullText = value.map(item => String(item)).join(', ')
+      const isTruncated = value.length > displayCount
+
+      return (
+        <Tooltip title={fullText}>
+          <span>
+            {displayText}
+            {isTruncated ? ` ... (${value.length} total)` : ''}
+          </span>
+        </Tooltip>
+      )
     }
   }
 
@@ -353,10 +414,11 @@ function createCellRenderer(fieldKey: string, fieldType: string, customFieldConf
 
     // For rich text fields, use better text processing with appropriate max length
     if (isRichTextField(fieldKey, fieldType)) {
-      return processForTableDisplay(stringValue, 100)
+      const processedText = processForTableDisplay(stringValue, 100)
+      return <TruncatedCell>{processedText}</TruncatedCell>
     }
 
-    return stringValue
+    return <TruncatedCell>{stringValue}</TruncatedCell>
   }
 }
 
@@ -631,7 +693,9 @@ export function createSalesforceFieldColumnMappings(
 export function createColumnsFromFields<TData>(
   fieldMappings: FieldMapping[],
   entityType: EntityType,
-  customColumnSizing: Record<string, number> = {}
+  customColumnSizing: Record<string, number> = {},
+  companyLookup: Record<string, string> = {},
+  userLookup: Record<string, string> = {}
 ): ColumnDef<TData>[] {
   // Create column helper for type safety
   const columnHelper = createColumnHelper<TData>()
@@ -654,7 +718,7 @@ export function createColumnsFromFields<TData>(
       }
 
       // Create the column definition using columnHelper.accessor with accessorFn
-      const defaultCellRenderer = createCellRenderer(field.key, field.type, field.customFieldConfig)
+      const defaultCellRenderer = createCellRenderer(field.key, field.type, field.customFieldConfig, companyLookup, userLookup)
 
       return columnHelper.accessor(createAccessor<TData>(field.key, isCustomField), {
         id: field.key,
@@ -691,12 +755,19 @@ export function addSelectionColumn<TData>(columns: ColumnDef<TData>[]): ColumnDe
 
   const selectionColumn = columnHelper.display({
     id: 'select',
-    header: ({ table }) => React.createElement('input', {
-      type: 'checkbox',
-      checked: table.getIsAllPageRowsSelected(),
-      indeterminate: table.getIsSomePageRowsSelected(),
-      onChange: table.getToggleAllPageRowsSelectedHandler()
-    }),
+    header: ({ table }) => {
+      const isIndeterminate = table.getIsSomePageRowsSelected()
+      return React.createElement('input', {
+        type: 'checkbox',
+        checked: table.getIsAllPageRowsSelected(),
+        ref: (el: HTMLInputElement | null) => {
+          if (el) {
+            el.indeterminate = isIndeterminate
+          }
+        },
+        onChange: table.getToggleAllPageRowsSelectedHandler()
+      })
+    },
     cell: ({ row }) => React.createElement('input', {
       type: 'checkbox',
       checked: row.getIsSelected(),
