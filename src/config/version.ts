@@ -10,12 +10,12 @@ declare global {
   const __DEV__: boolean
 }
 
-export const APP_VERSION = '4.1.47'
+export const APP_VERSION = '4.1.48'
 
 export const VERSION_INFO = {
   major: 4,
   minor: 1,
-  patch: 47,
+  patch: 48,
   full: APP_VERSION,
   displayName: `Planhat Tools v${APP_VERSION}`
 }

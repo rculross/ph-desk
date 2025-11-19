@@ -7,7 +7,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 
-import { ReloadOutlined, ClearOutlined, PlusOutlined } from '@ant-design/icons'
+import { ReloadOutlined, SettingOutlined, ClearOutlined, PlusOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type {
   ExpandedState,
@@ -17,6 +17,7 @@ import type {
   RowSelectionState,
   Table as TanStackTable
 } from '@tanstack/react-table'
+import { Dropdown, Checkbox, Typography } from 'antd'
 // Radio removed - not used
 import { clsx } from 'clsx'
 import { format as formatDate } from 'date-fns'
@@ -71,6 +72,7 @@ export function IssueExporter({ className }: IssueExporterProps) {
   // State management - Initialize with empty filters (issues endpoint doesn't support date filtering)
   const [filters, _setFilters] = useState<IssueExportFilters>({})
   const [isLoadingAllData, setIsLoadingAllData] = useState(false)
+  const [columnsDropdownOpen, setColumnsDropdownOpen] = useState(false)
   const loadingRef = useRef(false)
   const log = logger.extension
 
@@ -503,6 +505,42 @@ export function IssueExporter({ className }: IssueExporterProps) {
             Refresh
           </ToolHeaderButton>
 
+          <Dropdown
+            open={columnsDropdownOpen}
+            onOpenChange={setColumnsDropdownOpen}
+            trigger={['click']}
+            dropdownRender={() => (
+              <div className="p-3 min-w-[200px] bg-white rounded-lg shadow-lg border border-gray-200">
+                <div className="flex justify-between items-center mb-2">
+                  <Typography.Text strong>Show Columns</Typography.Text>
+                </div>
+                <div className="flex flex-col gap-1">
+                  {tableRef.current?.getAllLeafColumns()
+                    .filter(col => col.id !== 'select')
+                    .map(column => (
+                      <Checkbox
+                        key={column.id}
+                        checked={column.getIsVisible()}
+                        onChange={() => column.toggleVisibility()}
+                      >
+                        {typeof column.columnDef.header === 'string'
+                          ? column.columnDef.header
+                          : `Column ${column.id}`}
+                      </Checkbox>
+                    ))}
+                </div>
+              </div>
+            )}
+          >
+            <ToolHeaderButton
+              category={CONTROL_CATEGORIES.OUTPUT}
+              variant={columnsDropdownOpen ? 'primary' : 'secondary'}
+              icon={<SettingOutlined />}
+            >
+              Columns
+            </ToolHeaderButton>
+          </Dropdown>
+
           {pagination.hasMore && (
             <ToolHeaderButton
               category={CONTROL_CATEGORIES.OUTPUT}
@@ -575,8 +613,7 @@ export function IssueExporter({ className }: IssueExporterProps) {
         persistColumnSizes={true}
         loading={isLoading && !isLoadingAllData}
         customColumnSizing={columnSizing}
-        showToolbar={true}
-        title="Issues"
+        showToolbar={false}
         height={600}
         className="shadow-sm"
         emptyMessage="No issues found. Try adjusting your filters or create some issues first."
