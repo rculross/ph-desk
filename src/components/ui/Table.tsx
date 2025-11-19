@@ -228,20 +228,6 @@ export function Table<TData>({
 
   const persistenceEnabled = enablePersistence && Boolean(tenantSlug)
 
-  // Debug logging for persistence configuration
-  useEffect(() => {
-    console.group('🔧 [Table] Persistence Configuration')
-    console.log('Entity Type:', entityType)
-    console.log('Tenant Slug:', tenantSlug)
-    console.log('Enable Persistence (prop):', enablePersistence)
-    console.log('Persistence Enabled (calculated):', persistenceEnabled)
-    console.log('Persistence Scope:', persistenceScope)
-    console.log('Will persist column sizes:', persistenceEnabled)
-    console.log('Will persist column order:', persistenceEnabled)
-    console.log('Will persist column visibility:', persistenceEnabled)
-    console.groupEnd()
-  }, [entityType, tenantSlug, enablePersistence, persistenceEnabled, persistenceScope])
-
   // Use the core table hook with new simplified persistence
   const tableCore = useTableCore<TData>({
     data,

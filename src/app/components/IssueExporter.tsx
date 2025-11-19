@@ -7,7 +7,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 
-import { ReloadOutlined, SettingOutlined, ClearOutlined, PlusOutlined } from '@ant-design/icons'
+import { ReloadOutlined, ClearOutlined, PlusOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type {
   ExpandedState,
@@ -26,7 +26,6 @@ import { getTenantSlug } from '../../api/client/http-client'
 import { issuesService } from '../../api/services/issues.service'
 import { useUsersQuery } from '../../api/queries/users.queries'
 import { ExportFormatButtons, useSharedExporter } from '../../components/exporters'
-import { FieldsDropdownWrapper } from '../../components/ui/FieldsDropdown'
 import { OrderColumnsModal } from '../../components/ui/OrderColumnsModal'
 import { Table } from '../../components/ui/Table'
 import {
@@ -71,7 +70,6 @@ interface IssueExportConfiguration {
 export function IssueExporter({ className }: IssueExporterProps) {
   // State management - Initialize with empty filters (issues endpoint doesn't support date filtering)
   const [filters, _setFilters] = useState<IssueExportFilters>({})
-  const fieldDropdownRef = useRef<HTMLDivElement>(null)
   const [isLoadingAllData, setIsLoadingAllData] = useState(false)
   const loadingRef = useRef(false)
   const log = logger.extension
@@ -397,22 +395,6 @@ export function IssueExporter({ className }: IssueExporterProps) {
     fieldDetection.error?.message // Only track error message, not error object
   ])
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (fieldDropdownRef.current && !fieldDropdownRef.current.contains(event.target as Node)) {
-        fieldsControl.setActive(false)
-      }
-    }
-
-    if (fieldsControl.isActive) {
-      document.addEventListener('mousedown', handleClickOutside)
-      return () => document.removeEventListener('mousedown', handleClickOutside)
-    }
-
-    return undefined
-  }, [fieldsControl.isActive, fieldsControl.setActive])
-
   // DEBUG: Log field detection results (only when field detection state changes)
   useEffect(() => {
     // Only log significant changes, not every render
@@ -432,63 +414,23 @@ export function IssueExporter({ className }: IssueExporterProps) {
     dataSelection.selectedCount > 0 ? Array(dataSelection.selectedCount).fill(null) : []
   )
 
-  // PERFORMANCE OPTIMIZATION: Memoize fieldMappings calculation separately for tenant-aware caching
-  const optimizedFieldMappings = useMemo(() => {
-    // Get included fields (already filtered by the field detection hook)
-    const includedFields = fieldDetection.includedFields
-
-    // If no fields are included but we have issues, provide basic default fields
-    // This ensures the table always has columns to display when data is available
-    if (includedFields.length === 0 && issues.length > 0) {
-      // Create basic fields from the first issue
-      const firstIssue = issues[0] as any
-      const basicFields: Array<{
-        key: string;
-        label: string;
-        type: 'string' | 'date' | 'number' | 'boolean' | 'array' | 'object';
-        include: boolean;
-        source: 'standard' | 'custom';
-        customFieldConfig?: any;
-      }> = []
-
-      // Add essential fields if they exist
-      const essentialFields = ['_id', 'title', 'status', 'createdAt', 'updatedAt']
-      essentialFields.forEach(key => {
-        if (firstIssue[key] !== undefined) {
-          basicFields.push({
-            key,
-            label: key === '_id' ? 'ID' : key.charAt(0).toUpperCase() + key.slice(1),
-            type: key.includes('At') ? 'date' : 'string',
-            include: true,
-            source: 'standard'
-          })
-        }
-      })
-
-      log.debug('Using fallback field mappings', {
-        originalIncludedCount: includedFields.length,
-        fallbackFieldCount: basicFields.length,
-        fallbackFields: basicFields.map(f => f.key)
-      })
-
-      return basicFields
-    }
-
+  // Use ALL field mappings - let TanStack Table handle visibility via column visibility feature
+  const allFieldMappings = useMemo(() => {
     // If no issues or no field mappings yet, return empty
     if (issues.length === 0 || fieldDetection.fieldMappings.length === 0) {
       return []
     }
 
-    // Return the normal included fields
-    return includedFields.map(field => ({
+    // Return ALL fields (not just included ones) - visibility is controlled by TanStack Table
+    return fieldDetection.fieldMappings.map(field => ({
       key: field.key,
       label: field.label,
       type: field.type,
-      include: field.include,
+      include: true, // Always include - visibility managed by TanStack Table
       source: field.key.startsWith('custom.') ? 'custom' as const : 'standard' as const,
       customFieldConfig: field.customFieldConfig
     }))
-  }, [fieldDetection.includedFields, fieldDetection.fieldMappings.length, issues.length > 0])
+  }, [fieldDetection.fieldMappings, issues.length])
 
   // Use dynamic field detection results
   // Table columns are now handled by the Table component internally
@@ -551,30 +493,6 @@ export function IssueExporter({ className }: IssueExporterProps) {
       <ToolHeader title='Issues' icon={AlertCircleIcon}>
         {/* Output Controls */}
         <ToolHeaderControls category={CONTROL_CATEGORIES.OUTPUT}>
-          <div className='relative' ref={fieldDropdownRef}>
-            <ToolHeaderButton
-              category={CONTROL_CATEGORIES.OUTPUT}
-              variant={fieldsControl.isActive ? 'primary' : 'secondary'}
-              icon={<SettingOutlined />}
-              onClick={fieldsControl.toggle}
-            >
-              Columns
-            </ToolHeaderButton>
-
-            {/* Centralized Fields Dropdown */}
-            <FieldsDropdownWrapper
-              fieldsControl={fieldsControl}
-              fieldDetection={fieldDetection}
-              entityType="issue"
-              customFieldSupport={true}
-              onToggleField={fieldMapping.toggleFieldInclusion}
-              onSelectAll={fieldMapping.selectAllFields}
-              onDeselectAll={fieldMapping.deselectAllFields}
-              onManage={() => reorderControl.setActive(true)}
-            />
-          </div>
-
-
           <ToolHeaderButton
             category={CONTROL_CATEGORIES.OUTPUT}
             variant="secondary"
@@ -648,7 +566,7 @@ export function IssueExporter({ className }: IssueExporterProps) {
       {/* Data Table */}
       <Table
         data={issues}
-        fieldMappings={optimizedFieldMappings}
+        fieldMappings={allFieldMappings}
         entityType="issue"
         tenantSlug={tenantSlug ?? undefined}
         companyLookup={companyLookup}
@@ -657,7 +575,8 @@ export function IssueExporter({ className }: IssueExporterProps) {
         persistColumnSizes={true}
         loading={isLoading && !isLoadingAllData}
         customColumnSizing={columnSizing}
-        showToolbar={false}
+        showToolbar={true}
+        title="Issues"
         height={600}
         className="shadow-sm"
         emptyMessage="No issues found. Try adjusting your filters or create some issues first."

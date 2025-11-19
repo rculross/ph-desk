@@ -354,19 +354,6 @@ export function useTableCore<TData>({
     let isMounted = true
 
     const loadPersistedState = async () => {
-      console.group('📦 [useTableCore] Loading persisted table state')
-      console.log('Persistence scope:', {
-        shouldPersistColumnSizing,
-        shouldPersistColumnOrder,
-        shouldPersistColumnVisibility,
-        resolvedPersistenceBase
-      })
-      console.log('Storage keys:', {
-        primaryColumnSizingKey,
-        primaryColumnOrderKey,
-        primaryColumnVisibilityKey
-      })
-
       let persistedSizing: ColumnSizingState | undefined
       let persistedOrder: ColumnOrderState | undefined
       let persistedVisibility: VisibilityState | undefined
@@ -377,11 +364,8 @@ export function useTableCore<TData>({
             (key): key is string => Boolean(key)
           )
 
-          console.log('Keys to load:', keysToLoad)
-
           if (keysToLoad.length > 0) {
             const stored = await persistenceBackend.get(keysToLoad)
-            console.log('Raw stored data:', stored)
             if (primaryColumnSizingKey && stored[primaryColumnSizingKey]) {
               const candidateSizing = stored[primaryColumnSizingKey]
               if (isValidColumnSizingState(candidateSizing)) {
@@ -406,15 +390,9 @@ export function useTableCore<TData>({
             }
             if (primaryColumnVisibilityKey && stored[primaryColumnVisibilityKey]) {
               const candidateVisibility = stored[primaryColumnVisibilityKey]
-              console.log('📥 [useTableCore] Found persisted column visibility', {
-                key: primaryColumnVisibilityKey,
-                candidateVisibility,
-                isValid: isValidColumnVisibilityState(candidateVisibility)
-              })
               if (isValidColumnVisibilityState(candidateVisibility)) {
                 persistedVisibility = candidateVisibility
               } else {
-                console.warn('⚠️ [useTableCore] Invalid persisted column visibility state')
                 log.warn('Ignoring invalid persisted column visibility state', {
                   context: resolvedPersistenceBase,
                   key: primaryColumnVisibilityKey
@@ -445,18 +423,10 @@ export function useTableCore<TData>({
       }
 
       if (persistedVisibility && isValidColumnVisibilityState(persistedVisibility)) {
-        console.log('📥 [useTableCore] Applying persisted column visibility', {
-          persistedVisibility,
-          previousVisibility: columnVisibility
-        })
         setColumnVisibility(prev => ({ ...prev, ...persistedVisibility }))
-      } else {
-        console.log('📥 [useTableCore] No valid persisted visibility to apply')
       }
 
       setIsPersistenceLoaded(true)
-      console.log('✅ Persistence loaded successfully')
-      console.groupEnd()
     }
 
     void loadPersistedState()
@@ -547,38 +517,18 @@ export function useTableCore<TData>({
 
   const persistColumnVisibilityState = useCallback(
     (visibility: VisibilityState) => {
-      console.log('🟡 [useTableCore] persistColumnVisibilityState called', {
-        shouldPersistColumnVisibility,
-        hasPersistenceBackend: !!persistenceBackend,
-        primaryColumnVisibilityKey,
-        visibility
-      })
-
       if (!shouldPersistColumnVisibility || !persistenceBackend || !primaryColumnVisibilityKey) {
-        console.log('🟡 [useTableCore] Skipping persistence - conditions not met', {
-          shouldPersistColumnVisibility,
-          hasPersistenceBackend: !!persistenceBackend,
-          primaryColumnVisibilityKey
-        })
         return
       }
 
       if (columnVisibilityDebounceRef.current) {
         clearTimeout(columnVisibilityDebounceRef.current)
-        console.log('🟡 [useTableCore] Cleared previous debounce timer')
       }
 
-      console.log('🟡 [useTableCore] Setting up debounced save (500ms)...')
       columnVisibilityDebounceRef.current = setTimeout(async () => {
         try {
-          console.log('🟢 [useTableCore] SAVING column visibility to storage', {
-            key: primaryColumnVisibilityKey,
-            visibility
-          })
           await persistenceBackend.set({ [primaryColumnVisibilityKey]: visibility })
-          console.log('✅ [useTableCore] Column visibility saved successfully')
         } catch (error) {
-          console.error('❌ [useTableCore] Failed to persist column visibility', error)
           log.error('Failed to persist column visibility', {
             context: resolvedPersistenceBase,
             error: error instanceof Error ? error.message : 'Unknown error'
@@ -637,17 +587,9 @@ export function useTableCore<TData>({
 
   // Handle column visibility changes with persistence
   useEffect(() => {
-    console.log('🔷 [useTableCore] Column visibility changed', {
-      columnVisibility,
-      isPersistenceLoaded,
-      willPersist: isPersistenceLoaded
-    })
-
     // Persist state if needed
     if (isPersistenceLoaded) {
       persistColumnVisibilityState(columnVisibility)
-    } else {
-      console.log('🔷 [useTableCore] Skipping persistence - not loaded yet')
     }
   }, [columnVisibility, persistColumnVisibilityState, isPersistenceLoaded])
 
