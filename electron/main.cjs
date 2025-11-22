@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, safeStorage, globalShortcut, dialog } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, safeStorage, dialog } = require('electron');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -372,6 +372,34 @@ function createWindow() {
     }
   });
 
+  // Register local keyboard shortcuts for DevTools (only when app is focused)
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+
+    // F12 - Universal DevTools shortcut
+    if (input.key === 'F12') {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+      return;
+    }
+
+    // macOS: Cmd+Option+I or Cmd+Option+J
+    if (process.platform === 'darwin') {
+      if (input.meta && input.alt && (input.key === 'i' || input.key === 'I' || input.key === 'j' || input.key === 'J')) {
+        mainWindow.webContents.toggleDevTools();
+        event.preventDefault();
+        return;
+      }
+    } else {
+      // Windows/Linux: Ctrl+Shift+I or Ctrl+Shift+J
+      if (input.control && input.shift && (input.key === 'i' || input.key === 'I' || input.key === 'j' || input.key === 'J')) {
+        mainWindow.webContents.toggleDevTools();
+        event.preventDefault();
+        return;
+      }
+    }
+  });
+
   // Load app
   if (isDev) {
     // Try multiple ports in case 5173 is in use
@@ -447,40 +475,6 @@ app.whenReady().then(async () => {
   }
 
   createWindow();
-
-  // Register global keyboard shortcuts for DevTools
-  // F12 - Universal DevTools shortcut (works on all platforms)
-  globalShortcut.register('F12', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.toggleDevTools();
-    }
-  });
-
-  // Support both Chrome (Cmd+Option+J) and Electron (Cmd+Option+I) shortcuts on macOS
-  if (process.platform === 'darwin') {
-    globalShortcut.register('CommandOrControl+Option+J', () => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.toggleDevTools();
-      }
-    });
-    globalShortcut.register('CommandOrControl+Option+I', () => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.toggleDevTools();
-      }
-    });
-  } else {
-    // Windows/Linux: Ctrl+Shift+I and Ctrl+Shift+J
-    globalShortcut.register('CommandOrControl+Shift+I', () => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.toggleDevTools();
-      }
-    });
-    globalShortcut.register('CommandOrControl+Shift+J', () => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.toggleDevTools();
-      }
-    });
-  }
 
   app.on('activate', () => {
     // On macOS, re-create window when dock icon is clicked and no windows are open

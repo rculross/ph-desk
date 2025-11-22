@@ -5,25 +5,20 @@
  * field selection, and export format options.
  */
 
-import { useCallback, useEffect, useRef, useMemo } from 'react'
+import { useCallback, useEffect, useRef, useMemo, useState } from 'react'
 
-import { ReloadOutlined, SettingOutlined, ClearOutlined } from '@ant-design/icons'
+import { SettingOutlined } from '@ant-design/icons'
 import type {
-  GroupingState,
-  ExpandedState,
-  ColumnFiltersState,
-  SortingState,
   VisibilityState,
   RowSelectionState,
   Table as TanStackTable
 } from '@tanstack/react-table'
-// Radio removed - not used
+import { Typography, Button, Dropdown, Checkbox, InputNumber } from 'antd'
 import { clsx } from 'clsx'
 import { format as formatDate } from 'date-fns'
 import {
   WorkflowIcon,
-  AlertCircle as AlertCircleIcon,
-  ChevronDownIcon
+  AlertCircle as AlertCircleIcon
 } from 'lucide-react'
 
 import { getTenantSlug } from '../../api/client/http-client'
@@ -31,18 +26,15 @@ import { useUsersQuery } from '../../api/queries/users.queries'
 import { useWorkflowTemplatesQuery } from '../../api/queries/workflows.queries'
 import { workflowsService } from '../../api/services/workflows.service'
 import { ExportFormatButtons, useSharedExporter } from '../../components/exporters'
-import { FieldsDropdownWrapper } from '../../components/ui/FieldsDropdown'
 import { OrderColumnsModal } from '../../components/ui/OrderColumnsModal'
-import { Table } from '../../components/ui/Table'
+import { Table, type TableRenderContext } from '../../components/ui/Table'
 import {
   ToolHeader,
   ToolHeaderButton,
-  ToolHeaderControls,
-  ToolHeaderDivider
+  ToolHeaderControls
 } from '../../components/ui/ToolHeader'
 import { DEFAULT_VIRTUALIZATION } from '../../config/table-virtualization'
 import { useTableColumns } from '../../hooks/useTableColumns'
-import { useBadgeControl } from '../../hooks/useToolHeaderControls'
 import type {
   Workflow,
   WorkflowFilters,
@@ -85,11 +77,17 @@ interface WorkflowExportConfiguration {
  * Main WorkflowTemplateExporter component
  */
 export function WorkflowTemplateExporter({ className }: WorkflowTemplateExporterProps) {
-  const fieldDropdownRef = useRef<HTMLDivElement>(null)
   const log = logger.extension
+  const tableContextRef = useRef<TableRenderContext<Workflow> | null>(null)
 
   // Get tenant slug for tenant-aware caching
   const tenantSlug = getTenantSlug()
+
+  // State for max records and columns dropdown
+  const [maxRecords, setMaxRecords] = useState(2000)
+  const [columnsDropdownOpen, setColumnsDropdownOpen] = useState(false)
+  const [pendingVisibility, setPendingVisibility] = useState<VisibilityState | null>(null)
+  const hasAutoLoaded = useRef(false)
 
   // Fetch workflow templates data
   const {
@@ -98,7 +96,7 @@ export function WorkflowTemplateExporter({ className }: WorkflowTemplateExporter
     error,
     refetch
   } = useWorkflowTemplatesQuery({
-    pagination: { limit: 1000 }
+    pagination: { limit: maxRecords }
   })
 
   // Fetch users data for user name lookup in Created By column
@@ -106,6 +104,20 @@ export function WorkflowTemplateExporter({ className }: WorkflowTemplateExporter
 
   const workflowTemplates = workflowTemplatesData ?? []
   const totalCount = workflowTemplates.length
+
+  // Execute fetch with specified max records
+  const executeLoad = useCallback(() => {
+    log.info('Executing workflow templates load', { maxRecords })
+    void refetch()
+  }, [refetch, maxRecords])
+
+  // Auto-load on component mount
+  useEffect(() => {
+    if (!hasAutoLoaded.current) {
+      hasAutoLoaded.current = true
+      executeLoad()
+    }
+  }, [executeLoad])
 
   const exportDefaults = useMemo<WorkflowExportConfiguration>(
     () => ({
@@ -155,34 +167,72 @@ export function WorkflowTemplateExporter({ className }: WorkflowTemplateExporter
   })
 
   const {
-    fieldsControl,
     reorderControl,
     formatControl,
     columnSizing,
     handleColumnSizingChange,
     fieldDetection,
-    fieldMapping,
     dataSelection,
     handleDirectExport,
     isExporting
   } = exporter
 
-  const templateBadge = useBadgeControl(workflowTemplates)
-
+  // Column visibility handlers with deferred updates
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (fieldDropdownRef.current && !fieldDropdownRef.current.contains(event.target as Node)) {
-        fieldsControl.setActive(false)
+    if (columnsDropdownOpen && tableContextRef.current) {
+      // Initialize pending visibility when dropdown opens
+      const currentVisibility: VisibilityState = {}
+      tableContextRef.current.table.getAllLeafColumns().forEach(column => {
+        if (column.id !== 'select') {
+          currentVisibility[column.id] = column.getIsVisible()
+        }
+      })
+      setPendingVisibility(currentVisibility)
+    }
+  }, [columnsDropdownOpen])
+
+  const handleDropdownOpenChange = useCallback((open: boolean) => {
+    setColumnsDropdownOpen(open)
+
+    if (!open && pendingVisibility && tableContextRef.current) {
+      // Apply the pending visibility changes using setColumnVisibility from useTableCore
+      tableContextRef.current.state.setColumnVisibility(pendingVisibility)
+      setPendingVisibility(null)
+    }
+  }, [pendingVisibility])
+
+  const handleColumnToggle = useCallback((columnId: string) => {
+    if (!pendingVisibility) return
+
+    setPendingVisibility(prev => ({
+      ...prev!,
+      [columnId]: !prev![columnId]
+    }))
+  }, [pendingVisibility])
+
+  const handleSelectAll = useCallback(() => {
+    if (!tableContextRef.current) return
+
+    const newVisibility: VisibilityState = {}
+    tableContextRef.current.table.getAllLeafColumns().forEach(column => {
+      if (column.id !== 'select') {
+        newVisibility[column.id] = true
       }
-    }
+    })
+    setPendingVisibility(newVisibility)
+  }, [])
 
-    if (fieldsControl.isActive) {
-      document.addEventListener('mousedown', handleClickOutside)
-      return () => document.removeEventListener('mousedown', handleClickOutside)
-    }
+  const handleDeselectAll = useCallback(() => {
+    if (!tableContextRef.current) return
 
-    return undefined
-  }, [fieldsControl.isActive, fieldsControl.setActive])
+    const newVisibility: VisibilityState = {}
+    tableContextRef.current.table.getAllLeafColumns().forEach(column => {
+      if (column.id !== 'select') {
+        newVisibility[column.id] = false
+      }
+    })
+    setPendingVisibility(newVisibility)
+  }, [])
 
   // Generate table columns using centralized hook with tenant-aware caching
   const tableColumns = useTableColumns<Workflow>({
@@ -191,8 +241,6 @@ export function WorkflowTemplateExporter({ className }: WorkflowTemplateExporter
     columnSizing,
     tenantSlug
   })
-
-  const tableRef = useRef<TanStackTable<Workflow> | null>(null)
 
   // Handle table row selection changes
   const { deselectAll, toggleItem } = dataSelection
@@ -248,64 +296,90 @@ export function WorkflowTemplateExporter({ className }: WorkflowTemplateExporter
     <div className={clsx('space-y-0', className)}>
       {/* Tool Header */}
       <ToolHeader title='Workflow Templates' icon={WorkflowIcon}>
-        {/* Output Controls */}
+        {/* Controls */}
         <ToolHeaderControls category={CONTROL_CATEGORIES.OUTPUT}>
-          <div className='relative' ref={fieldDropdownRef}>
+          {/* Columns Button */}
+          <Dropdown
+            open={columnsDropdownOpen}
+            onOpenChange={handleDropdownOpenChange}
+            trigger={['click']}
+            dropdownRender={() => (
+              <div className="p-3 min-w-[200px] bg-white rounded-lg shadow-lg border border-gray-200">
+                <div className="flex justify-between items-center mb-2">
+                  <Typography.Text strong>Show Columns</Typography.Text>
+                  <div className="flex gap-2">
+                    <Button
+                      type="text"
+                      size="small"
+                      onClick={handleSelectAll}
+                    >
+                      All
+                    </Button>
+                    <Button
+                      type="text"
+                      size="small"
+                      onClick={handleDeselectAll}
+                    >
+                      None
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1 max-h-[400px] overflow-y-auto">
+                  {tableContextRef.current?.table.getAllLeafColumns()
+                    .filter(col => col.id !== 'select')
+                    .map(column => {
+                      const isVisible = pendingVisibility
+                        ? pendingVisibility[column.id] !== false
+                        : column.getIsVisible()
+
+                      return (
+                        <Checkbox
+                          key={column.id}
+                          checked={isVisible}
+                          onChange={() => handleColumnToggle(column.id)}
+                        >
+                          {typeof column.columnDef.header === 'string'
+                            ? column.columnDef.header
+                            : `Column ${column.id}`}
+                        </Checkbox>
+                      )
+                    })}
+                </div>
+              </div>
+            )}
+          >
             <ToolHeaderButton
               category={CONTROL_CATEGORIES.OUTPUT}
-              variant={fieldsControl.isActive ? 'primary' : 'secondary'}
+              variant={columnsDropdownOpen ? 'primary' : 'secondary'}
               icon={<SettingOutlined />}
-              onClick={fieldsControl.toggle}
             >
               Columns
             </ToolHeaderButton>
+          </Dropdown>
 
-            {/* Centralized Fields Dropdown */}
-            <FieldsDropdownWrapper
-              fieldsControl={fieldsControl}
-              fieldDetection={fieldDetection}
-              entityType="workflow"
-              customFieldSupport={false}
-              onToggleField={fieldMapping.toggleFieldInclusion}
-              onSelectAll={fieldMapping.selectAllFields}
-              onDeselectAll={fieldMapping.deselectAllFields}
-              onManage={() => reorderControl.setActive(true)}
-            />
-          </div>
+          {/* Max Records Input */}
+          <InputNumber
+            mode="spinner"
+            value={maxRecords}
+            onChange={(value) => setMaxRecords(value || 2000)}
+            min={100}
+            max={50000}
+            step={2000}
+            style={{ width: 120 }}
+          />
 
-
-          <ToolHeaderButton
-            category={CONTROL_CATEGORIES.OUTPUT}
-            variant="secondary"
-            icon={<ReloadOutlined />}
-            onClick={() => refetch()}
+          {/* Execute Button */}
+          <Button
+            size="small"
+            type="primary"
+            onClick={executeLoad}
             loading={isLoading}
           >
-            Refresh
-          </ToolHeaderButton>
-        </ToolHeaderControls>
+            Execute
+          </Button>
 
-        <ToolHeaderDivider />
-
-        {/* Table Controls */}
-        <ToolHeaderControls category={CONTROL_CATEGORIES.TABLE}>
-          <ToolHeaderButton
-            category={CONTROL_CATEGORIES.TABLE}
-            variant="secondary"
-            icon={<ClearOutlined />}
-            onClick={() => {
-              alert('To clear filters: Use the built-in table controls below. Reset individual column filters or use the table toolbar.')
-            }}
-          >
-            Clear Filters
-          </ToolHeaderButton>
-        </ToolHeaderControls>
-
-        <ToolHeaderDivider />
-
-        {/* Export Controls */}
-        <ToolHeaderControls category={CONTROL_CATEGORIES.EXPORT}>
-          <span className="font-medium text-sm -mr-1">Export:</span>
+          {/* Export Controls */}
+          <span className="font-medium text-sm -mr-1 ml-2">Export:</span>
           <ExportFormatButtons
             selectedFormat={formatControl.selectedFormat}
             onSelect={(format) => {
@@ -349,10 +423,10 @@ export function WorkflowTemplateExporter({ className }: WorkflowTemplateExporter
 
         onSelectionChange={handleSelectionChange}
 
-        onTableReady={({ table }) => {
-          tableRef.current = table
+        onTableReady={(context) => {
+          tableContextRef.current = context
           log.debug('Workflow table ready', {
-            columnCount: table.getAllLeafColumns().length
+            columnCount: context.table.getAllLeafColumns().length
           })
         }}
 

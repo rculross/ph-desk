@@ -7,18 +7,13 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 
-import { ReloadOutlined, SettingOutlined, ClearOutlined, PlusOutlined } from '@ant-design/icons'
+import { SettingOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type {
-  ExpandedState,
-  ColumnFiltersState,
-  SortingState,
   VisibilityState,
-  RowSelectionState,
-  Table as TanStackTable
+  RowSelectionState
 } from '@tanstack/react-table'
-import { Dropdown, Checkbox, Typography, Button } from 'antd'
-// Radio removed - not used
+import { Typography, Button, Dropdown, Checkbox, InputNumber } from 'antd'
 import { clsx } from 'clsx'
 import { format as formatDate } from 'date-fns'
 import { AlertCircleIcon } from 'lucide-react'
@@ -28,16 +23,14 @@ import { issuesService } from '../../api/services/issues.service'
 import { useUsersQuery } from '../../api/queries/users.queries'
 import { ExportFormatButtons, useSharedExporter } from '../../components/exporters'
 import { OrderColumnsModal } from '../../components/ui/OrderColumnsModal'
-import { Table } from '../../components/ui/Table'
+import { Table, type TableRenderContext } from '../../components/ui/Table'
 import {
   ToolHeader,
   ToolHeaderButton,
-  ToolHeaderControls,
-  ToolHeaderDivider
+  ToolHeaderControls
 } from '../../components/ui/ToolHeader'
 import { DEFAULT_VIRTUALIZATION } from '../../config/table-virtualization'
 import { useTableColumns } from '../../hooks/useTableColumns'
-import { useBadgeControl } from '../../hooks/useToolHeaderControls'
 import type { Issue, IssueFilters } from '../../types/api'
 import { CONTROL_CATEGORIES } from '../../types/ui'
 import { logger } from '../../utils/logger'
@@ -73,7 +66,10 @@ export function IssueExporter({ className }: IssueExporterProps) {
   const [filters, _setFilters] = useState<IssueExportFilters>({})
   const [isLoadingAllData, setIsLoadingAllData] = useState(false)
   const [columnsDropdownOpen, setColumnsDropdownOpen] = useState(false)
+  const [pendingVisibility, setPendingVisibility] = useState<VisibilityState | null>(null)
+  const [maxRecords, setMaxRecords] = useState(2000)
   const loadingRef = useRef(false)
+  const hasAutoLoaded = useRef(false)
   const log = logger.extension
 
   // Pagination state for incremental loading
@@ -285,6 +281,33 @@ export function IssueExporter({ className }: IssueExporterProps) {
     }
   }, [pagination, isFetching])
 
+  // Execute fetch with specified max records
+  const executeLoad = useCallback(() => {
+    log.info('Executing issues load', { maxRecords })
+
+    // Reset pagination to first page with new maxRecords
+    setPagination({
+      currentOffset: 0,
+      recordsPerPull: maxRecords,
+      totalLoaded: 0,
+      hasMore: false
+    })
+
+    // Clear accumulated issues
+    setAllIssues([])
+
+    // Refetch query
+    void refetchQuery()
+  }, [refetchQuery, maxRecords])
+
+  // Auto-load on component mount
+  useEffect(() => {
+    if (!hasAutoLoaded.current) {
+      hasAutoLoaded.current = true
+      executeLoad()
+    }
+  }, [executeLoad])
+
   // Refresh functionality
   const refetch = useCallback(() => {
     log.info('Refreshing issues')
@@ -374,7 +397,7 @@ export function IssueExporter({ className }: IssueExporterProps) {
     tenantSlug
   })
 
-  const tableRef = useRef<TanStackTable<Issue> | null>(null)
+  const tableContextRef = useRef<TableRenderContext<Issue> | null>(null)
 
   // CRITICAL DEBUG: Log field detection state changes (optimized dependencies)
   useEffect(() => {
@@ -410,11 +433,6 @@ export function IssueExporter({ className }: IssueExporterProps) {
       })
     }
   }, [fieldDetection.fieldMappings.length, fieldDetection.isLoading])
-
-  // Badge control for selected items
-  const selectedBadge = useBadgeControl(
-    dataSelection.selectedCount > 0 ? Array(dataSelection.selectedCount).fill(null) : []
-  )
 
   // Use ALL field mappings - let TanStack Table handle visibility via column visibility feature
   const allFieldMappings = useMemo(() => {
@@ -488,26 +506,73 @@ export function IssueExporter({ className }: IssueExporterProps) {
     })
   }, [log, fieldDetection])
 
+  // Column visibility handlers with deferred updates
+  useEffect(() => {
+    if (columnsDropdownOpen && tableContextRef.current) {
+      // Initialize pending visibility when dropdown opens
+      const currentVisibility: VisibilityState = {}
+      tableContextRef.current.table.getAllLeafColumns().forEach(column => {
+        if (column.id !== 'select') {
+          currentVisibility[column.id] = column.getIsVisible()
+        }
+      })
+      setPendingVisibility(currentVisibility)
+    }
+  }, [columnsDropdownOpen])
+
+  const handleDropdownOpenChange = useCallback((open: boolean) => {
+    setColumnsDropdownOpen(open)
+
+    if (!open && pendingVisibility && tableContextRef.current) {
+      // Apply the pending visibility changes using setColumnVisibility from useTableCore
+      tableContextRef.current.state.setColumnVisibility(pendingVisibility)
+      setPendingVisibility(null)
+    }
+  }, [pendingVisibility])
+
+  const handleColumnToggle = useCallback((columnId: string) => {
+    if (!pendingVisibility) return
+
+    setPendingVisibility(prev => ({
+      ...prev!,
+      [columnId]: !prev![columnId]
+    }))
+  }, [pendingVisibility])
+
+  const handleSelectAll = useCallback(() => {
+    if (!tableContextRef.current) return
+
+    const newVisibility: VisibilityState = {}
+    tableContextRef.current.table.getAllLeafColumns().forEach(column => {
+      if (column.id !== 'select') {
+        newVisibility[column.id] = true
+      }
+    })
+    setPendingVisibility(newVisibility)
+  }, [])
+
+  const handleDeselectAll = useCallback(() => {
+    if (!tableContextRef.current) return
+
+    const newVisibility: VisibilityState = {}
+    tableContextRef.current.table.getAllLeafColumns().forEach(column => {
+      if (column.id !== 'select') {
+        newVisibility[column.id] = false
+      }
+    })
+    setPendingVisibility(newVisibility)
+  }, [])
 
   return (
     <div className={clsx('space-y-6', className)}>
       {/* Tool Header */}
       <ToolHeader title='Issues' icon={AlertCircleIcon}>
-        {/* Output Controls */}
+        {/* Controls */}
         <ToolHeaderControls category={CONTROL_CATEGORIES.OUTPUT}>
-          <ToolHeaderButton
-            category={CONTROL_CATEGORIES.OUTPUT}
-            variant="secondary"
-            icon={<ReloadOutlined />}
-            onClick={() => refetch()}
-            loading={isLoading || isLoadingAllData}
-          >
-            Refresh
-          </ToolHeaderButton>
-
+          {/* Columns Button */}
           <Dropdown
             open={columnsDropdownOpen}
-            onOpenChange={setColumnsDropdownOpen}
+            onOpenChange={handleDropdownOpenChange}
             trigger={['click']}
             dropdownRender={() => (
               <div className="p-3 min-w-[200px] bg-white rounded-lg shadow-lg border border-gray-200">
@@ -517,33 +582,39 @@ export function IssueExporter({ className }: IssueExporterProps) {
                     <Button
                       type="text"
                       size="small"
-                      onClick={() => tableRef.current?.toggleAllColumnsVisible(true)}
+                      onClick={handleSelectAll}
                     >
                       All
                     </Button>
                     <Button
                       type="text"
                       size="small"
-                      onClick={() => tableRef.current?.toggleAllColumnsVisible(false)}
+                      onClick={handleDeselectAll}
                     >
                       None
                     </Button>
                   </div>
                 </div>
-                <div className="flex flex-col gap-1">
-                  {tableRef.current?.getAllLeafColumns()
+                <div className="flex flex-col gap-1 max-h-[400px] overflow-y-auto">
+                  {tableContextRef.current?.table.getAllLeafColumns()
                     .filter(col => col.id !== 'select')
-                    .map(column => (
-                      <Checkbox
-                        key={column.id}
-                        checked={column.getIsVisible()}
-                        onChange={() => column.toggleVisibility()}
-                      >
-                        {typeof column.columnDef.header === 'string'
-                          ? column.columnDef.header
-                          : `Column ${column.id}`}
-                      </Checkbox>
-                    ))}
+                    .map(column => {
+                      const isVisible = pendingVisibility
+                        ? pendingVisibility[column.id] !== false
+                        : column.getIsVisible()
+
+                      return (
+                        <Checkbox
+                          key={column.id}
+                          checked={isVisible}
+                          onChange={() => handleColumnToggle(column.id)}
+                        >
+                          {typeof column.columnDef.header === 'string'
+                            ? column.columnDef.header
+                            : `Column ${column.id}`}
+                        </Checkbox>
+                      )
+                    })}
                 </div>
               </div>
             )}
@@ -557,41 +628,30 @@ export function IssueExporter({ className }: IssueExporterProps) {
             </ToolHeaderButton>
           </Dropdown>
 
-          {pagination.hasMore && (
-            <ToolHeaderButton
-              category={CONTROL_CATEGORIES.OUTPUT}
-              variant="secondary"
-              icon={<PlusOutlined />}
-              onClick={loadMore}
-              loading={isFetching}
-              disabled={!pagination.hasMore}
-            >
-              Load More ({pagination.totalLoaded} loaded, +{pagination.recordsPerPull} more)
-            </ToolHeaderButton>
-          )}
-        </ToolHeaderControls>
+          {/* Max Records Input */}
+          <InputNumber
+            mode="spinner"
+            value={maxRecords}
+            onChange={(value) => setMaxRecords(value || 2000)}
+            min={100}
+            max={50000}
+            step={2000}
+            style={{ width: 120 }}
+          />
 
-        <ToolHeaderDivider />
-
-        {/* Table Controls */}
-        <ToolHeaderControls category={CONTROL_CATEGORIES.TABLE}>
-          <ToolHeaderButton
-            category={CONTROL_CATEGORIES.TABLE}
-            variant="secondary"
-            icon={<ClearOutlined />}
-            onClick={() => {
-              alert('To clear filters: Use the built-in table controls below. Reset individual column filters or use the table toolbar.')
-            }}
+          {/* Execute Button */}
+          <Button
+            size="small"
+            type="primary"
+            onClick={executeLoad}
+            loading={isLoading || isLoadingAllData}
+            style={{ minWidth: 75 }}
           >
-            Clear Filters
-          </ToolHeaderButton>
-        </ToolHeaderControls>
+            Execute
+          </Button>
 
-        <ToolHeaderDivider />
-
-        {/* Export Controls */}
-        <ToolHeaderControls category={CONTROL_CATEGORIES.EXPORT}>
-          <span className="font-medium text-sm -mr-1">Export:</span>
+          {/* Export Controls */}
+          <span className="font-medium text-sm -mr-1 ml-2">Export:</span>
           <ExportFormatButtons
             selectedFormat={formatControl.selectedFormat}
             onSelect={(format) => {
@@ -683,10 +743,10 @@ export function IssueExporter({ className }: IssueExporterProps) {
           }
         }}
 
-        onTableReady={({ table }) => {
-          tableRef.current = table
+        onTableReady={(context) => {
+          tableContextRef.current = context
           log.debug('Issue table ready', {
-            columnCount: table.getAllLeafColumns().length,
+            columnCount: context.table.getAllLeafColumns().length,
             hasPersistence: Boolean(tenantSlug)
           })
         }}

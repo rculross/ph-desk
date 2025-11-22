@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 
 
+
 import { PlayCircleOutlined, EditOutlined, HistoryOutlined, DeleteOutlined } from '@ant-design/icons'
 import { Button, Input, Radio, Dropdown } from 'antd'
 import { clsx } from 'clsx'
@@ -29,9 +30,46 @@ import { useEndpointHistory } from '../../hooks/useEndpointHistory'
 import { useFieldDetection } from '../../hooks/useFieldDetection'
 import { useFormatControl } from '../../hooks/useToolHeaderControls'
 import { useActiveTenant } from '../../stores/tenant.store'
-import type { ExportFormat } from '../../types/api'
+import type { EntityType, ExportFormat } from '../../types/api'
+import type { FieldMapping } from '../../types/export'
 import { CONTROL_CATEGORIES, EXPORT_FORMAT_OPTIONS } from '../../types/ui'
 import { logger } from '../../utils/logger'
+
+/**
+ * Map endpoint path to EntityType for field detection
+ * Falls back to 'custom' for unknown endpoints
+ */
+function inferEntityTypeFromEndpoint(endpoint: string): EntityType {
+  if (!endpoint) return 'custom'
+
+  // Extract base path (before query params) and first path segment
+  const cleanEndpoint = endpoint.split('?')[0]?.toLowerCase() ?? ''
+  const basePath = cleanEndpoint.split('/')[0] ?? ''
+
+  // Map common Planhat endpoints to entity types
+  const endpointMapping: Record<string, EntityType> = {
+    'companies': 'company',
+    'users': 'user',
+    'issues': 'issue',
+    'tasks': 'task',
+    'notes': 'note',
+    'workflows': 'workflow',
+    'roles': 'role'
+  }
+
+  // Check for direct match
+  if (basePath in endpointMapping) {
+    return endpointMapping[basePath]!
+  }
+
+  // Check for workflows/* pattern
+  if (cleanEndpoint.startsWith('workflows/') || cleanEndpoint.startsWith('workflows')) {
+    return 'workflow'
+  }
+
+  // Default to custom for unknown endpoints
+  return 'custom'
+}
 
 export interface FlexExporterProps {
   className?: string
@@ -52,6 +90,7 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
   const [error, setError] = useState<string | null>(null)
   const [maxRecords, setMaxRecords] = useState<string>('100')
   const [progress, setProgress] = useState<{ loaded: number; total: number } | null>(null)
+  const [inferredEntityType, setInferredEntityType] = useState<EntityType>('custom')
 
   // Export state
   const formatControl = useFormatControl<ExportFormat>(
@@ -75,16 +114,35 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
     toastService.success('Endpoint history cleared')
   }, [clearHistory])
 
+  // Helper to normalize endpoint for display (strip API domain, ensure leading slash)
+  const normalizeEndpoint = (endpoint: string): string => {
+    let normalized = endpoint
+    // Strip common API domain prefixes
+    normalized = normalized.replace(/^https?:\/\/api\.planhat(demo)?\.com\/?/i, '')
+    // Ensure leading slash
+    if (!normalized.startsWith('/')) {
+      normalized = '/' + normalized
+    }
+    return normalized
+  }
+
+  // Helper to truncate endpoint text for display
+  const truncateEndpoint = (text: string, maxLength: number = 75): string => {
+    if (text.length <= maxLength) return text
+    return text.substring(0, maxLength) + '...'
+  }
+
   // Create history dropdown menu items
   const historyMenuItems = useMemo(() => {
-    const items: any[] = history.map(item => ({
-      key: item.id,
-      label: (
-        <div className="flex items-center justify-between gap-3 min-w-0">
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-mono truncate">{item.endpoint}</div>
-            <div className="text-xs text-gray-500">{item.displayTime}</div>
-          </div>
+    const items: any[] = history.map(item => {
+      const normalizedEndpoint = normalizeEndpoint(item.endpoint)
+      return {
+        key: item.id,
+        label: (
+          <div className="flex items-center justify-between gap-3 min-w-0">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-mono" title={normalizedEndpoint}>{truncateEndpoint(normalizedEndpoint)}</div>
+            </div>
           <div className={clsx(
             'px-2 py-0.5 text-xs rounded font-medium shrink-0',
             item.method === 'GET' && 'bg-blue-100 text-blue-700',
@@ -96,7 +154,8 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
         </div>
       ),
       onClick: () => handleSelectFromHistory(item.endpoint)
-    }))
+    }
+  })
 
     // Add clear history option if there are items
     if (items.length > 0) {
@@ -125,14 +184,36 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
   const tenantSlug = activeTenant?.slug ?? getTenantSlug()
 
 
-  // Field detection disabled - FlexExporter is a generic pass-through tool
-  // that doesn't know entity types. Export works directly from response data.
+  // Field detection - enabled after we have response data
+  // Uses inferred entity type from endpoint and sample data from response
+  const sampleDataForDetection = useMemo(() => {
+    if (!responseData) return []
+    return Array.isArray(responseData) ? responseData.slice(0, 100) : [responseData]
+  }, [responseData])
+
   const fieldDetection = useFieldDetection({
-    entityType: 'issue', // Placeholder only (not used when disabled)
-    sampleData: [],
+    entityType: inferredEntityType,
+    sampleData: sampleDataForDetection,
     tenantSlug: tenantSlug ?? undefined,
-    enabled: false // Disabled to prevent invalid API calls with unknown entity types
+    enabled: sampleDataForDetection.length > 0 // Enable when we have response data
   })
+
+  // Convert field mappings to FieldMapping format for Table component
+  const tableFieldMappings = useMemo((): FieldMapping[] => {
+    if (!fieldDetection.fieldMappings || fieldDetection.fieldMappings.length === 0) {
+      return []
+    }
+
+    return fieldDetection.fieldMappings.map(field => ({
+      key: field.key,
+      label: field.label,
+      type: field.type,
+      include: field.include,
+      order: field.order,
+      width: field.width,
+      customFieldConfig: field.customFieldConfig
+    }))
+  }, [fieldDetection.fieldMappings])
 
   // Log component mount
   useEffect(() => {
@@ -302,21 +383,18 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
 
       setResponseData(result)
 
-      // For large datasets, only stringify a preview to avoid hanging the browser
-      const recordCount = Array.isArray(result) ? result.length : 1
-      const isLargeDataset = recordCount > 100
+      // Infer entity type from endpoint for field detection
+      const entityType = inferEntityTypeFromEndpoint(endpoint.trim())
+      setInferredEntityType(entityType)
+      log.debug('Inferred entity type from endpoint', {
+        endpoint: endpoint.trim(),
+        entityType
+      })
 
-      if (isLargeDataset) {
-        // Show summary and preview for large datasets
-        const preview = Array.isArray(result) ? result.slice(0, 10) : result
-        const previewJson = JSON.stringify(preview, null, 2)
-        const summary = `// Large dataset: ${recordCount} records\n// Showing first 10 records as preview\n// Use Export buttons to download full dataset\n\n${previewJson}`
-        setJsonContent(summary)
-        setViewMode('table') // Auto-switch to table view for large datasets
-      } else {
-        setJsonContent(JSON.stringify(result, null, 2))
-        setViewMode('json')
-      }
+      const recordCount = Array.isArray(result) ? result.length : 1
+      setJsonContent(JSON.stringify(result, null, 2))
+      // Auto-switch to table view for larger datasets
+      setViewMode(recordCount > 100 ? 'table' : 'json')
       const successMessage = progress
         ? `${requestMode} request successful - fetched ${recordCount} records in ${Math.ceil(recordCount / 2000)} chunks`
         : `${requestMode} request successful`
@@ -606,15 +684,17 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
 
           <Table
             data={responseData}
-            columns={[]}
-            entityType="custom"
+            fieldMappings={tableFieldMappings}
+            entityType={inferredEntityType}
             tenantSlug={tenantSlug ?? undefined}
             enablePersistence={false}
-            enableVirtualization={true}
+            enableRowVirtualization={true}
+            enableColumnVirtualization={true}
             enableColumnResizing={true}
             enableSorting={true}
-            enableFilters={true}
-            enableGlobalSearch={true}
+            enableFiltering={true}
+            enableGlobalFilter={true}
+            loading={fieldDetection.isLoading}
           />
         </div>
       )}
@@ -631,9 +711,9 @@ export function FlexExporter({ className, variant = 'full' }: FlexExporterProps)
                   <span className='text-sm font-medium'>Request failed</span>
                 </div>
               )}
-              {!error && responseData && Array.isArray(responseData) && responseData.length > 100 && (
+              {!error && responseData && Array.isArray(responseData) && (
                 <div className='text-sm text-gray-600'>
-                  ({responseData.length} records - showing preview)
+                  ({responseData.length} records)
                 </div>
               )}
             </div>

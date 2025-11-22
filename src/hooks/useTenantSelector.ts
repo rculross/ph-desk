@@ -401,6 +401,17 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
     log('info', 'Refreshing production tenants')
 
     try {
+      // Clear all caches to force fresh API calls
+      // 1. Clear store-level cache timestamps
+      useTenantStore.getState().invalidateCache()
+
+      // 2. Clear service-level caches
+      const { tenantListCache, tenantStatusCache } = await import('../stores/tenant-cache')
+      tenantListCache.clear()
+      tenantStatusCache.clear()
+
+      log('debug', 'Caches cleared, fetching fresh tenant data')
+
       await fetchAvailableTenants(undefined, true)
       await fetchAllTenantStatuses('production')
 
@@ -435,6 +446,17 @@ export const useTenantSelector = (): UseTenantSelectorReturn => {
     log('info', 'Refreshing demo tenants')
 
     try {
+      // Clear all caches to force fresh API calls
+      // 1. Clear store-level cache timestamps
+      useTenantStore.getState().invalidateCache()
+
+      // 2. Clear service-level caches
+      const { tenantListCache, tenantStatusCache } = await import('../stores/tenant-cache')
+      tenantListCache.clear()
+      tenantStatusCache.clear()
+
+      log('debug', 'Caches cleared, fetching fresh demo tenant data')
+
       const { tenantService } = await import('../api/services/tenant.service')
 
       let targetDemoTenant = getLastDemoTenant?.() ?? lastDemoTenant ?? null

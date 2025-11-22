@@ -1,6 +1,6 @@
 {
   "name": "ph-desk",
-  "version": "4.1.49",
+  "version": "4.1.66",
   "description": "Advanced desktop application providing intelligent tools and automation for Planhat platform users",
   "main": "electron/main.cjs",
   "type": "module",
@@ -26,7 +26,7 @@
     "@tanstack/react-table": "^8.11.8",
     "@tanstack/react-virtual": "^3.13.12",
     "@types/dompurify": "^3.0.5",
-    "antd": "^5.27.3",
+    "antd": "^6.0.0",
     "axios": "^1.11.0",
     "axios-retry": "^4.5.0",
     "bottleneck": "^2.19.5",

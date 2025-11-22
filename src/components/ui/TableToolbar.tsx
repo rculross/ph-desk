@@ -5,7 +5,7 @@
  * Handles filtering, sorting, grouping, and selection management.
  */
 
-import React from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 
 import {
   FilterOutlined,
@@ -95,6 +95,70 @@ export function TableToolbar<TData>({
   children
 }: TableToolbarProps<TData>) {
   const selectedCount = Object.keys(rowSelection).length
+
+  // State for deferred column visibility updates
+  const [pendingVisibility, setPendingVisibility] = useState<VisibilityState | null>(null)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+
+  // Initialize pending visibility when dropdown opens
+  useEffect(() => {
+    if (dropdownOpen && table) {
+      const currentVisibility: VisibilityState = {}
+      table.getAllLeafColumns().forEach(column => {
+        if (column.id !== 'select') {
+          currentVisibility[column.id] = column.getIsVisible()
+        }
+      })
+      setPendingVisibility(currentVisibility)
+    }
+  }, [dropdownOpen, table])
+
+  // Apply pending changes when dropdown closes
+  const handleDropdownOpenChange = useCallback((open: boolean) => {
+    setDropdownOpen(open)
+
+    if (!open && pendingVisibility && onColumnVisibilityChange) {
+      // Apply the pending visibility changes
+      onColumnVisibilityChange(pendingVisibility)
+      setPendingVisibility(null)
+    }
+  }, [pendingVisibility, onColumnVisibilityChange])
+
+  // Handle individual column toggle
+  const handleColumnToggle = useCallback((columnId: string) => {
+    if (!pendingVisibility) return
+
+    setPendingVisibility(prev => ({
+      ...prev,
+      [columnId]: !prev![columnId]
+    }))
+  }, [pendingVisibility])
+
+  // Handle select all columns
+  const handleSelectAll = useCallback(() => {
+    if (!table) return
+
+    const newVisibility: VisibilityState = {}
+    table.getAllLeafColumns().forEach(column => {
+      if (column.id !== 'select') {
+        newVisibility[column.id] = true
+      }
+    })
+    setPendingVisibility(newVisibility)
+  }, [table])
+
+  // Handle deselect all columns
+  const handleDeselectAll = useCallback(() => {
+    if (!table) return
+
+    const newVisibility: VisibilityState = {}
+    table.getAllLeafColumns().forEach(column => {
+      if (column.id !== 'select') {
+        newVisibility[column.id] = false
+      }
+    })
+    setPendingVisibility(newVisibility)
+  }, [table])
 
   return (
     <div className={clsx('flex items-center justify-between p-3 border-b bg-gray-50', className)}>
@@ -226,34 +290,68 @@ export function TableToolbar<TData>({
         {enableColumnVisibility && table && (
           <Dropdown
             trigger={['click']}
+            open={dropdownOpen}
+            onOpenChange={handleDropdownOpenChange}
             popupRender={() => (
               <div className="p-3 min-w-[200px] bg-white rounded-lg shadow-lg border border-gray-200">
                 <div className="flex justify-between items-center mb-2">
                   <Text strong>Show Columns</Text>
+                  <div className="flex gap-2">
+                    <Button
+                      type="text"
+                      size="small"
+                      onClick={handleSelectAll}
+                    >
+                      All
+                    </Button>
+                    <Button
+                      type="text"
+                      size="small"
+                      onClick={handleDeselectAll}
+                    >
+                      None
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="flex flex-col gap-1">
                   {(() => {
                     const allColumns = table.getAllLeafColumns().filter(column => column.id !== 'select')
-                    const hiddenColumns = allColumns.filter(column => !column.getIsVisible())
 
-                    // Show all columns in their table order first, then hidden columns alphabetically
-                    const orderedColumns = [
-                      ...allColumns.filter(column => column.getIsVisible()),
-                      ...hiddenColumns.sort((a, b) => {
+                    // Use pending visibility if available, otherwise use current visibility
+                    const getVisibility = (columnId: string) => {
+                      if (pendingVisibility) {
+                        return pendingVisibility[columnId] !== false
+                      }
+                      return table.getColumn(columnId)?.getIsVisible() ?? true
+                    }
+
+                    // Sort columns: visible first (in order), then hidden (alphabetically)
+                    const orderedColumns = [...allColumns].sort((a, b) => {
+                      const aVisible = getVisibility(a.id)
+                      const bVisible = getVisibility(b.id)
+
+                      // If visibility differs, visible columns come first
+                      if (aVisible !== bVisible) {
+                        return aVisible ? -1 : 1
+                      }
+
+                      // For hidden columns, sort alphabetically
+                      if (!aVisible) {
                         const aHeader = typeof a.columnDef.header === 'string' ? a.columnDef.header : a.id
                         const bHeader = typeof b.columnDef.header === 'string' ? b.columnDef.header : b.id
                         return aHeader.localeCompare(bHeader)
-                      })
-                    ]
+                      }
+
+                      // Keep visible columns in their original order
+                      return 0
+                    })
 
                     return orderedColumns.map(column => (
                       <Checkbox
                         key={column.id}
-                        checked={column.getIsVisible()}
-                        onChange={() => {
-                          column.toggleVisibility()
-                        }}
+                        checked={getVisibility(column.id)}
+                        onChange={() => handleColumnToggle(column.id)}
                       >
                         {typeof column.columnDef.header === 'string'
                           ? column.columnDef.header

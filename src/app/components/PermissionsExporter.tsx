@@ -7,14 +7,12 @@
 
 import { useCallback, useRef, useMemo, useState, useEffect } from 'react'
 
-import { ReloadOutlined, SettingOutlined } from '@ant-design/icons'
+import { SettingOutlined } from '@ant-design/icons'
 import type {
-  ColumnFiltersState,
-  SortingState,
   VisibilityState,
-  RowSelectionState,
-  Table as TanStackTable
+  RowSelectionState
 } from '@tanstack/react-table'
+import { Typography, Button, Dropdown, Checkbox, InputNumber } from 'antd'
 import { format as formatDate } from 'date-fns'
 import { ShieldIcon } from 'lucide-react'
 
@@ -23,24 +21,17 @@ import { useRoles, useRolePermissions } from '../../api/queries/permissions.quer
 import type { Role } from '../../api/services/permissions.service'
 import { useUsersQuery } from '../../api/queries/users.queries'
 import { ExportFormatButtons, useSharedExporter } from '../../components/exporters'
-import { FieldsDropdownWrapper } from '../../components/ui/FieldsDropdown'
-import { OrderColumnsModal } from '../../components/ui/OrderColumnsModal'
-import { Table } from '../../components/ui/Table'
+import { Table, type TableRenderContext } from '../../components/ui/Table'
 import {
   ToolHeader,
   ToolHeaderButton,
-  ToolHeaderControls,
-  ToolHeaderDivider
+  ToolHeaderControls
 } from '../../components/ui/ToolHeader'
 import { DEFAULT_VIRTUALIZATION } from '../../config/table-virtualization'
 import { useTableColumns } from '../../hooks/useTableColumns'
-import { useBadgeControl } from '../../hooks/useToolHeaderControls'
 import { CONTROL_CATEGORIES } from '../../types/ui'
 import { logger } from '../../utils/logger'
-import {
-  generatePermissionsExcel,
-  generatePermissionsFlatData
-} from '../../services/permissions-export.service'
+import { generatePermissionsExcel } from '../../services/permissions-export.service'
 
 const log = logger.extension
 
@@ -61,11 +52,14 @@ interface PermissionsExportConfiguration {
  * Main PermissionsExporter component
  */
 export function PermissionsExporter({ className }: PermissionsExporterProps) {
-  const fieldDropdownRef = useRef<HTMLDivElement>(null)
-  const tableRef = useRef<TanStackTable<Role> | null>(null)
+  const tableContextRef = useRef<TableRenderContext<Role> | null>(null)
 
   // Get tenant slug for tenant-aware caching
   const tenantSlug = getTenantSlug()
+
+  // State for max records
+  const [maxRecords, setMaxRecords] = useState(2000)
+  const hasAutoLoaded = useRef(false)
 
   // Fetch roles data
   const {
@@ -86,16 +80,24 @@ export function PermissionsExporter({ className }: PermissionsExporterProps) {
   // Fetch users data for counting users per role
   const { data: usersData } = useUsersQuery({
     filters: { isActive: true },
-    pagination: { limit: 2000 }
+    pagination: { limit: maxRecords }
   })
 
   const users = usersData?.data ?? []
 
-  // Refresh functionality
-  const refetch = useCallback(() => {
-    log.info('Refreshing roles data')
+  // Execute fetch with specified max records
+  const executeLoad = useCallback(() => {
+    log.info('Executing permissions load', { maxRecords })
     void refetchQuery()
-  }, [refetchQuery])
+  }, [refetchQuery, maxRecords])
+
+  // Auto-load on component mount
+  useEffect(() => {
+    if (!hasAutoLoaded.current) {
+      hasAutoLoaded.current = true
+      executeLoad()
+    }
+  }, [executeLoad])
 
   const exportDefaults = useMemo<PermissionsExportConfiguration>(
     () => ({
@@ -126,19 +128,20 @@ export function PermissionsExporter({ className }: PermissionsExporterProps) {
   })
 
   const {
-    fieldsControl,
-    reorderControl,
     formatControl,
     columnSizing,
     handleColumnSizingChange,
     fieldDetection,
-    dataSelection,
     isExporting
   } = exporter
 
   // Local export state for custom Excel handler
   const [isCustomExporting, setIsCustomExporting] = useState(false)
   const effectiveIsExporting = isExporting || isCustomExporting
+
+  // Columns dropdown state
+  const [columnsDropdownOpen, setColumnsDropdownOpen] = useState(false)
+  const [pendingVisibility, setPendingVisibility] = useState<VisibilityState | null>(null)
 
   // Generate table columns
   const tableColumns = useTableColumns<Role>({
@@ -148,24 +151,62 @@ export function PermissionsExporter({ className }: PermissionsExporterProps) {
     tenantSlug
   })
 
-  // Badge controls
-  const rolesBadge = useBadgeControl(roles)
-
-  // Click outside handler for fields dropdown
+  // Column visibility handlers with deferred updates
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (fieldDropdownRef.current && !fieldDropdownRef.current.contains(event.target as Node)) {
-        fieldsControl.setActive(false)
+    if (columnsDropdownOpen && tableContextRef.current) {
+      // Initialize pending visibility when dropdown opens
+      const currentVisibility: VisibilityState = {}
+      tableContextRef.current.table.getAllLeafColumns().forEach(column => {
+        if (column.id !== 'select') {
+          currentVisibility[column.id] = column.getIsVisible()
+        }
+      })
+      setPendingVisibility(currentVisibility)
+    }
+  }, [columnsDropdownOpen])
+
+  const handleDropdownOpenChange = useCallback((open: boolean) => {
+    setColumnsDropdownOpen(open)
+
+    if (!open && pendingVisibility && tableContextRef.current) {
+      // Apply the pending visibility changes using setColumnVisibility from useTableCore
+      tableContextRef.current.state.setColumnVisibility(pendingVisibility)
+      setPendingVisibility(null)
+    }
+  }, [pendingVisibility])
+
+  const handleColumnToggle = useCallback((columnId: string) => {
+    if (!pendingVisibility) return
+
+    setPendingVisibility(prev => ({
+      ...prev!,
+      [columnId]: !prev![columnId]
+    }))
+  }, [pendingVisibility])
+
+  const handleSelectAll = useCallback(() => {
+    if (!tableContextRef.current) return
+
+    const newVisibility: VisibilityState = {}
+    tableContextRef.current.table.getAllLeafColumns().forEach(column => {
+      if (column.id !== 'select') {
+        newVisibility[column.id] = true
       }
-    }
+    })
+    setPendingVisibility(newVisibility)
+  }, [])
 
-    if (fieldsControl.isActive) {
-      document.addEventListener('mousedown', handleClickOutside)
-      return () => document.removeEventListener('mousedown', handleClickOutside)
-    }
+  const handleDeselectAll = useCallback(() => {
+    if (!tableContextRef.current) return
 
-    return undefined
-  }, [fieldsControl.isActive, fieldsControl])
+    const newVisibility: VisibilityState = {}
+    tableContextRef.current.table.getAllLeafColumns().forEach(column => {
+      if (column.id !== 'select') {
+        newVisibility[column.id] = false
+      }
+    })
+    setPendingVisibility(newVisibility)
+  }, [])
 
   // Custom export handler for Excel multi-sheet
   const handleDirectExport = useCallback(
@@ -264,63 +305,95 @@ export function PermissionsExporter({ className }: PermissionsExporterProps) {
   )
 
   // Table state
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'name', desc: false }])
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
 
   return (
     <div className={className}>
       <ToolHeader title="Permissions" icon={ShieldIcon}>
-        {/* OUTPUT controls */}
+        {/* Controls */}
         <ToolHeaderControls category={CONTROL_CATEGORIES.OUTPUT}>
-          <ToolHeaderButton
-            category={CONTROL_CATEGORIES.OUTPUT}
-            icon={<ReloadOutlined />}
-            onClick={refetch}
-            disabled={isLoading}
-            loading={isLoading}
-          >
-            Refresh
-          </ToolHeaderButton>
+          {/* Columns Button */}
+          <Dropdown
+            open={columnsDropdownOpen}
+            onOpenChange={handleDropdownOpenChange}
+            trigger={['click']}
+            dropdownRender={() => (
+              <div className="p-3 min-w-[200px] bg-white rounded-lg shadow-lg border border-gray-200">
+                <div className="flex justify-between items-center mb-2">
+                  <Typography.Text strong>Show Columns</Typography.Text>
+                  <div className="flex gap-2">
+                    <Button
+                      type="text"
+                      size="small"
+                      onClick={handleSelectAll}
+                    >
+                      All
+                    </Button>
+                    <Button
+                      type="text"
+                      size="small"
+                      onClick={handleDeselectAll}
+                    >
+                      None
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1 max-h-[400px] overflow-y-auto">
+                  {tableContextRef.current?.table.getAllLeafColumns()
+                    .filter(col => col.id !== 'select')
+                    .map(column => {
+                      const isVisible = pendingVisibility
+                        ? pendingVisibility[column.id] !== false
+                        : column.getIsVisible()
 
-          <div ref={fieldDropdownRef}>
+                      return (
+                        <Checkbox
+                          key={column.id}
+                          checked={isVisible}
+                          onChange={() => handleColumnToggle(column.id)}
+                        >
+                          {typeof column.columnDef.header === 'string'
+                            ? column.columnDef.header
+                            : `Column ${column.id}`}
+                        </Checkbox>
+                      )
+                    })}
+                </div>
+              </div>
+            )}
+          >
             <ToolHeaderButton
               category={CONTROL_CATEGORIES.OUTPUT}
+              variant={columnsDropdownOpen ? 'primary' : 'secondary'}
               icon={<SettingOutlined />}
-              {...fieldsControl.buttonProps}
-              onClick={fieldsControl.toggle}
             >
               Columns
             </ToolHeaderButton>
-          </div>
-        </ToolHeaderControls>
+          </Dropdown>
 
-        <ToolHeaderDivider />
+          {/* Max Records Input */}
+          <InputNumber
+            mode="spinner"
+            value={maxRecords}
+            onChange={(value) => setMaxRecords(value || 2000)}
+            min={100}
+            max={50000}
+            step={2000}
+            style={{ width: 120 }}
+          />
 
-        {/* TABLE controls */}
-        <ToolHeaderControls category={CONTROL_CATEGORIES.TABLE}>
-          <ToolHeaderButton
-            category={CONTROL_CATEGORIES.TABLE}
-            onClick={reorderControl.toggle}
-            {...reorderControl.buttonProps}
+          {/* Execute Button */}
+          <Button
+            size="small"
+            type="primary"
+            onClick={executeLoad}
+            loading={isLoading}
           >
-            Reorder
-          </ToolHeaderButton>
+            Execute
+          </Button>
 
-          <ToolHeaderButton
-            category={CONTROL_CATEGORIES.TABLE}
-            badge={rolesBadge.badge}
-          >
-            {totalCount} Roles
-          </ToolHeaderButton>
-        </ToolHeaderControls>
-
-        <ToolHeaderDivider />
-
-        {/* EXPORT controls */}
-        <ToolHeaderControls category={CONTROL_CATEGORIES.EXPORT}>
-          <span className="font-medium text-sm -mr-1">Export:</span>
+          {/* Export Controls */}
+          <span className="font-medium text-sm -mr-1 ml-2">Export:</span>
           <ExportFormatButtons
             selectedFormat={formatControl.selectedFormat}
             onSelect={(format) => {
@@ -333,28 +406,6 @@ export function PermissionsExporter({ className }: PermissionsExporterProps) {
         </ToolHeaderControls>
       </ToolHeader>
 
-      {/* Fields dropdown */}
-      <FieldsDropdownWrapper
-        fieldsControl={fieldsControl}
-        fieldDetection={fieldDetection}
-        entityType="role"
-        customFieldSupport={false}
-        onToggleField={(key: string) => exporter.fieldMapping.toggleFieldInclusion(key)}
-        onSelectAll={exporter.fieldMapping.selectAllFields}
-        onDeselectAll={exporter.fieldMapping.deselectAllFields}
-      />
-
-      {/* Column reorder modal */}
-      <OrderColumnsModal
-        visible={reorderControl.isActive}
-        onClose={() => reorderControl.setActive(false)}
-        columns={fieldDetection.fieldMappings ?? []}
-        onColumnsReorder={(reorderedColumns) => {
-          exporter.fieldMapping.reorderSelectedFields(reorderedColumns)
-        }}
-        title="Reorder Table Columns"
-        loading={fieldDetection.isLoading}
-      />
 
       {/* Error display */}
       {error && (
@@ -386,8 +437,8 @@ export function PermissionsExporter({ className }: PermissionsExporterProps) {
           rowHeight={DEFAULT_VIRTUALIZATION.rowHeight}
           enableRowVirtualization={DEFAULT_VIRTUALIZATION.enableRowVirtualization}
           onSelectionChange={setRowSelection}
-          onTableReady={({ table }) => {
-            tableRef.current = table
+          onTableReady={(context) => {
+            tableContextRef.current = context
           }}
           onColumnSizingChange={handleColumnSizingChange}
         />

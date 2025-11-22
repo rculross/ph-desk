@@ -152,17 +152,18 @@ export async function generatePermissionsExcel(
       } else {
         const permissions = rolePerms[0].permissions || {}
         const isWorkflow = perm.category === 'Workflow'
+        const isAccountAccess = perm.category === 'Account Access'
 
-        if (isWorkflow) {
-          // Workflow: just Yes or blank
+        if (isWorkflow || isAccountAccess) {
+          // Workflow or Account Access: just Yes or blank
           row.push(permissions.enabled ? 'Yes' : null)
         } else {
-          // Model: Show CRUD code (e.g., "CRUDE" for all permissions)
+          // Model: Show CVURE code (Create, View, Update, Remove, Export)
           let code = ''
           if (permissions.create) code += 'C'
-          if (permissions.read || permissions.view) code += 'R'
+          if (permissions.read || permissions.view) code += 'V'
           if (permissions.update) code += 'U'
-          if (permissions.delete || permissions.remove) code += 'D'
+          if (permissions.delete || permissions.remove) code += 'R'
           if (permissions.export) code += 'E'
           row.push(code || null)
         }

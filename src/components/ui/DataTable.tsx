@@ -69,7 +69,7 @@ export function DataTable<TData>({
   const [headerMetrics, setHeaderMetrics] = useState({ top: 0, height: 0 })
 
   const rows = table.getRowModel().rows
-  const columns = table.getAllLeafColumns()
+  const columns = table.getVisibleLeafColumns()
 
   const tableState = table.getState()
   const columnSizingInfo = tableState.columnSizingInfo

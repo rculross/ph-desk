@@ -43,6 +43,7 @@ import { SalesforceIntegration } from './components/SalesforceIntegration'
 import { WorkflowTemplateExporter } from './components/WorkflowExporter'
 import { SampleDataProgressModal } from '../components/SampleDataProgress'
 import { sampleDataService, type SampleDataProgress } from '../services/sample-data.service'
+import { IconComparison } from './components/IconComparison'
 
 // Navigation items
 type NavItem = 'home' | 'issues' | 'workflows' | 'flex' | 'permissions' | 'salesforce-integration' | 'logz-explorer' | 'llm-integration' | 'connected-apis' | 'endpoints'
@@ -706,20 +707,28 @@ function Dashboard({ onNavigate: _onNavigate }: { onNavigate: (tab: NavItem) => 
   }, [log])
 
   return (
-    <div className='flex flex-col items-center justify-center min-h-[60vh] space-y-8'>
-      <div className='flex h-24 w-24 items-center justify-center rounded-full bg-planhat-blue shadow-lg'>
-        <span className='text-3xl font-bold text-white'>P</span>
+    <div className='flex flex-col space-y-8'>
+      {/* Original Dashboard Content */}
+      <div className='flex flex-col items-center justify-center min-h-[30vh] space-y-8'>
+        <div className='flex h-24 w-24 items-center justify-center rounded-full bg-planhat-blue shadow-lg'>
+          <span className='text-3xl font-bold text-white'>P</span>
+        </div>
+
+        <div className='text-center space-y-2'>
+          <h1 className='text-3xl font-bold text-gray-900'>Welcome to Planhat Tools</h1>
+          <p className='text-lg text-gray-600'>
+            Powerful tools and utilities for the Planhat platform
+          </p>
+        </div>
+
+        <div className='text-center text-sm text-gray-500 max-w-md'>
+          <p>Select a category from the navigation above to get started</p>
+        </div>
       </div>
 
-      <div className='text-center space-y-2'>
-        <h1 className='text-3xl font-bold text-gray-900'>Welcome to Planhat Tools</h1>
-        <p className='text-lg text-gray-600'>
-          Powerful tools and utilities for the Planhat platform
-        </p>
-      </div>
-
-      <div className='text-center text-sm text-gray-500 max-w-md'>
-        <p>Select a category from the navigation above to get started</p>
+      {/* Temporary Icon Comparison Component */}
+      <div className='mt-8'>
+        <IconComparison />
       </div>
     </div>
   )

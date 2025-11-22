@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react'
 
-import { CaretDownOutlined, CaretUpOutlined, FilterFilled } from '@ant-design/icons'
+import { FilterFilled } from '@ant-design/icons'
 import { flexRender, type Header , Table } from '@tanstack/react-table'
 import { clsx } from 'clsx'
 
@@ -162,21 +162,6 @@ export function ColumnHeaderLabel<TData>({ header, className }: ColumnHeaderLabe
       onClick={header.column.getCanSort() ? header.column.getToggleSortingHandler() : undefined}
     >
       {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-
-      {header.column.getCanSort() && (
-        <div className="ml-1 flex flex-col text-sm text-gray-400">
-          {header.column.getIsSorted() === 'asc' ? (
-            <CaretUpOutlined className="text-blue-600" />
-          ) : header.column.getIsSorted() === 'desc' ? (
-            <CaretDownOutlined className="text-blue-600" />
-          ) : (
-            <div className="flex flex-col">
-              <CaretUpOutlined className="-mb-1 opacity-30" />
-              <CaretDownOutlined className="opacity-30" />
-            </div>
-          )}
-        </div>
-      )}
 
       {header.column.getCanFilter() && (
         <div className="ml-1" data-no-column-drag>
